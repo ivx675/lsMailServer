@@ -1,0 +1,1202 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mail Server Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="bg-blue-600 text-white p-2 rounded-lg shadow">
+                <i class="fa-solid fa-server text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">Mail Server Admin</h1>
+                <p class="text-xs text-slate-400">Database & Server Management Console</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span id="authUsernameDisplay" class="text-xs text-slate-400 hidden sm:inline"></span>
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span class="w-2 h-2 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span> Connected
+            </span>
+            <button onclick="handleLogout()" title="Sign Out" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
+                <i class="fa-solid fa-right-from-bracket"></i>
+                <span class="hidden sm:inline">Logout</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Navigation Tabs -->
+    <nav class="bg-slate-800/60 border-b border-slate-700 px-6 flex space-x-4">
+        <button onclick="switchTab('domains')" id="tab-domains" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2">
+            <i class="fa-solid fa-globe"></i><span>Domains</span>
+        </button>
+        <button onclick="switchTab('users')" id="tab-users" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2">
+            <i class="fa-solid fa-users"></i><span>Users & Mailboxes</span>
+        </button>
+    </nav>
+
+    <!-- Content Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-6">
+
+        <!-- ================= DOMAINS TAB ================= -->
+        <section id="section-domains" class="space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <!-- Search & Filters -->
+                <div class="flex flex-wrap items-center gap-3 flex-1">
+                    <div class="relative flex-1 min-w-[200px]">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="domainSearch" placeholder="Search domain name..."
+                               class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <select id="domainStatusFilter" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Statuses</option>
+                        <option value="true">Enabled Only</option>
+                        <option value="false">Disabled Only</option>
+                    </select>
+                    <button onclick="loadDomains()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2">
+                        <i class="fa-solid fa-filter"></i><span>Filter</span>
+                    </button>
+                </div>
+                <!-- Action Button -->
+                <button onclick="openCreateDomainModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow flex items-center space-x-2 whitespace-nowrap">
+                    <i class="fa-solid fa-plus"></i><span>Add Domain</span>
+                </button>
+            </div>
+
+            <!-- Domains Table Card -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3 px-6">Domain Name</th>
+                                <th class="py-3 px-6">Description</th>
+                                <th class="py-3 px-6 text-center">Active</th>
+                                <th class="py-3 px-6 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="domainsTableBody" class="divide-y divide-slate-700 text-sm">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Empty State -->
+                <div id="domainsEmptyState" class="hidden p-12 text-center text-slate-400">
+                    <i class="fa-solid fa-globe text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-base font-medium">No domains found</p>
+                    <p class="text-xs text-slate-500 mt-1">Get started by creating your first mail domain.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= USERS TAB ================= -->
+        <section id="section-users" class="hidden space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <!-- Search & Filters -->
+                <div class="flex flex-wrap items-center gap-3 flex-1">
+                    <div class="relative flex-1 min-w-[200px]">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="userSearch" oninput="filterUsersLocally()" placeholder="Search username, email, or description..."
+                               class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <select id="userStatusFilter" onchange="filterUsersLocally()" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Statuses</option>
+                        <option value="true">Enabled Only</option>
+                        <option value="false">Disabled Only</option>
+                    </select>
+                    <select id="userInactivityFilter" onchange="filterUsersLocally()" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Activity</option>
+                        <option value="never">Never Logged In</option>
+                        <option value="30">Inactive &gt; 30 Days</option>
+                        <option value="90">Inactive &gt; 90 Days</option>
+                        <option value="180">Inactive &gt; 180 Days</option>
+                    </select>
+                    <button onclick="loadUsers()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2">
+                        <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                    </button>
+                </div>
+                <!-- Action Button -->
+                <button onclick="openCreateUserModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow flex items-center space-x-2 whitespace-nowrap">
+                    <i class="fa-solid fa-user-plus"></i><span>Add User</span>
+                </button>
+            </div>
+
+            <!-- Users Table Card -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3 px-6">User Name</th>
+                                <th class="py-3 px-6">Email Aliases</th>
+                                <th class="py-3 px-6">Description</th>
+                                <th class="py-3 px-6">Storage Quota</th>
+                                <th class="py-3 px-6">Daily Sends</th>
+                                <th class="py-3 px-6">Last Login</th>
+                                <th class="py-3 px-6 text-center">Active</th>
+                                <th class="py-3 px-6 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody" class="divide-y divide-slate-700 text-sm">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Empty State -->
+                <div id="usersEmptyState" class="hidden p-12 text-center text-slate-400">
+                    <i class="fa-solid fa-users text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-base font-medium">No users found</p>
+                    <p class="text-xs text-slate-500 mt-1">Create a new user mailbox or adjust your search filter.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ================= LOGIN MODAL ================= -->
+    <div id="loginModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden p-6 space-y-6">
+            <div class="text-center space-y-2">
+                <div class="w-12 h-12 bg-blue-600/10 border border-blue-500/20 text-blue-400 rounded-full flex items-center justify-center mx-auto text-xl">
+                    <i class="fa-solid fa-lock"></i>
+                </div>
+                <h2 class="font-bold text-lg text-slate-100">Admin Authentication</h2>
+                <p class="text-xs text-slate-400">Sign in to manage domains and user mailboxes.</p>
+            </div>
+            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Username</label>
+                    <input type="text" id="loginUsername" oninput="clearLoginError()" required placeholder="admin"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Password</label>
+                    <div class="relative">
+                        <input type="password" id="loginPassword" oninput="clearLoginError()" required placeholder="••••••••••"
+                               class="w-full pl-3 pr-10 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                        <button type="button" onclick="togglePasswordVisibility('loginPassword', 'loginPwdEye')" title="Show/Hide Password"
+                                class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-200">
+                            <i id="loginPwdEye" class="fa-solid fa-eye text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="loginErrorBox" class="hidden rounded-lg bg-rose-500/10 border border-rose-500/30 px-3 py-2.5 text-xs text-rose-300 flex items-center space-x-2">
+                    <i class="fa-solid fa-circle-exclamation text-rose-400 shrink-0"></i>
+                    <span id="loginErrorText">Invalid username or password.</span>
+                </div>
+                <button type="submit" id="loginSubmitBtn" class="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">
+                    Sign In
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= CREATE DOMAIN MODAL ================= -->
+    <div id="createDomainModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-globe text-blue-500"></i><span>Create New Domain</span>
+                </h3>
+                <button onclick="closeCreateDomainModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="createDomainForm" onsubmit="handleCreateDomain(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Domain Name</label>
+                    <input type="text" id="newDomainName" required placeholder="e.g. example.com"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description (Optional)</label>
+                    <textarea id="newDomainDesc" rows="2" placeholder="Internal notes or organization..."
+                              class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100"></textarea>
+                </div>
+                <div class="flex items-center space-x-2 pt-2">
+                    <input type="checkbox" id="newDomainEnabled" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                    <label for="newDomainEnabled" class="text-sm font-medium text-slate-300">Enable routing immediately</label>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+                    <button type="button" onclick="closeCreateDomainModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Create Domain</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= EDIT DOMAIN MODAL ================= -->
+    <div id="editDomainModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-pen-to-square text-blue-500"></i><span>Edit Domain</span>
+                </h3>
+                <button onclick="closeEditDomainModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="editDomainForm" onsubmit="handleUpdateDomain(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Domain Name (Read-Only)</label>
+                    <input type="text" id="editDomainNameDisplay" disabled
+                           class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-400 cursor-not-allowed">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description</label>
+                    <textarea id="editDomainDesc" rows="2" placeholder="Internal notes..."
+                              class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100"></textarea>
+                </div>
+                <div class="flex items-center space-x-2 pt-2">
+                    <input type="checkbox" id="editDomainEnabled" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                    <label for="editDomainEnabled" class="text-sm font-medium text-slate-300">Enable routing</label>
+                </div>
+                <!-- Delete & Save actions inside modal -->
+                <div class="flex items-center justify-between pt-4 border-t border-slate-700">
+                    <button type="button" onclick="openDeleteConfirmModal('domain')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
+                        <i class="fa-solid fa-trash-can"></i><span>Delete Domain</span>
+                    </button>
+                    <div class="flex space-x-2">
+                        <button type="button" onclick="closeEditDomainModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Save Changes</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= CREATE USER MODAL ================= -->
+    <div id="createUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-user-plus text-blue-500"></i><span>Create New User</span>
+                </h3>
+                <button onclick="closeCreateUserModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form id="createUserForm" onsubmit="handleCreateUser(event)" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Username / Handle</label>
+                    <input type="text" id="newUserName" required placeholder="e.g. john.doe"
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Password</label>
+                    <div class="flex space-x-2">
+                        <div class="relative flex-1">
+                            <input type="password" id="newUserPassword" required placeholder="••••••••••"
+                                   class="w-full pl-3 pr-10 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                            <button type="button" onclick="togglePasswordVisibility('newUserPassword', 'newUserPwdEye')" title="Show/Hide Password"
+                                    class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-200">
+                                <i id="newUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+                            </button>
+                        </div>
+                        <button type="button" onclick="fillRandomPassword('newUserPassword', 'newUserPwdEye')" title="Generate Secure Random Password"
+                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                            <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description (Optional)</label>
+                    <input type="text" id="newUserDesc" placeholder="Department, full name, or role..."
+                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Mailbox Quota (MB)</label>
+                        <input type="number" id="newUserQuotaMB" value="10240" required min="1"
+                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                        <p class="text-[11px] text-slate-500 mt-1">10240 MB = 10 GB</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Max Daily Sends</label>
+                        <input type="number" id="newUserMaxSends" value="500" required min="0"
+                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+                    <button type="button" onclick="closeCreateUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Create User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================= EDIT USER MODAL ================= -->
+    <div id="editUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-user-gear text-blue-500"></i><span>Manage User Mailbox</span>
+                </h3>
+                <button onclick="closeEditUserModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-5">
+                <form id="editUserForm" onsubmit="handleUpdateUser(event)" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Username (Read-Only)</label>
+                        <input type="text" id="editUserNameDisplay" disabled
+                               class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-400 cursor-not-allowed">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">New Password</label>
+                        <div class="flex space-x-2">
+                            <div class="relative flex-1">
+                                <input type="password" id="editUserPassword" placeholder="Leave blank to keep current"
+                                       class="w-full pl-3 pr-10 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                                <button type="button" onclick="togglePasswordVisibility('editUserPassword', 'editUserPwdEye')" title="Show/Hide Password"
+                                        class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-200">
+                                    <i id="editUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+                                </button>
+                            </div>
+                            <button type="button" onclick="fillRandomPassword('editUserPassword', 'editUserPwdEye')" title="Generate Secure Random Password"
+                                    class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                                <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description</label>
+                        <input type="text" id="editUserDesc" placeholder="Internal notes..."
+                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Mailbox Quota (MB)</label>
+                            <input type="number" id="editUserQuotaMB" required min="1"
+                                   class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Max Daily Sends</label>
+                            <input type="number" id="editUserMaxSends" required min="0"
+                                   class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="editUserEnabled" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                            <label for="editUserEnabled" class="text-sm font-medium text-slate-300">Account Enabled</label>
+                        </div>
+                        <span id="editUserAuditInfo" class="text-[11px] text-slate-400"></span>
+                    </div>
+
+                    <!-- Delete & Save actions inside modal -->
+                    <div class="flex items-center justify-between pt-4 border-t border-slate-700">
+                        <button type="button" onclick="openDeleteConfirmModal('user')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
+                            <i class="fa-solid fa-trash-can"></i><span>Delete User</span>
+                        </button>
+                        <div class="flex space-x-2">
+                            <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Save Changes</button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Email Aliases Section -->
+                <div class="pt-4 border-t border-slate-700 space-y-3">
+                    <label class="block text-xs font-semibold uppercase text-slate-400">Assigned Email Addresses & Aliases</label>
+                    <div class="flex space-x-2">
+                        <input type="email" id="newUserAliasInput" placeholder="user@domain.com"
+                               class="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                        <button type="button" onclick="handleAddUserEmail()" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                            <i class="fa-solid fa-plus text-xs"></i><span>Add</span>
+                        </button>
+                    </div>
+                    <ul id="userAliasesList" class="divide-y divide-slate-800 bg-slate-900/70 border border-slate-700/80 rounded-lg max-h-36 overflow-y-auto">
+                        <!-- Aliases populated dynamically -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= CUSTOM CENTERED DELETE CONFIRMATION MODAL ================= -->
+    <div id="deleteConfirmModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[70] flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-rose-500/30 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden text-center p-6 space-y-4">
+            <div class="w-12 h-12 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-full flex items-center justify-center mx-auto text-xl shadow-inner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <h3 id="deleteConfirmTitle" class="font-bold text-lg text-slate-100">Confirm Deletion</h3>
+                <p id="deleteConfirmText" class="text-xs text-slate-400 mt-1">Are you sure? This action cannot be undone.</p>
+            </div>
+            <div class="flex space-x-3 pt-2">
+                <button type="button" onclick="closeDeleteConfirmModal()" class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
+                <button type="button" onclick="executeDeleteTarget()" class="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Yes, Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast" class="fixed bottom-6 right-6 z-[110] transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div id="toastContent" class="bg-slate-800 border border-slate-700 shadow-xl rounded-xl px-4 py-3 flex items-center space-x-3 text-sm">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400"></i>
+            <span id="toastMessage" class="font-medium text-slate-200">Action completed successfully.</span>
+        </div>
+    </div>
+
+    <!-- JavaScript Application Logic -->
+    <script>
+        const AUTH_API = '/api/auth';
+        const DOMAINS_API = '/api/domains';
+        const USERS_API = '/api/users';
+        const BYTES_PER_MB = 1024 * 1024;
+        const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+        let domainsCache = [];
+        let usersCache = [];
+        let deleteContext = null; // 'domain', 'user', or 'user-email'
+        let pendingDeleteEmail = null;
+        let currentTab = 'domains';
+
+        // Authenticated Fetch Wrapper (Automatically detects 401 session expiry)
+        async function apiFetch(url, options = {}) {
+            const res = await fetch(url, {
+                credentials: 'same-origin',
+                ...options
+            });
+            if (res.status === 401) {
+                document.getElementById('loginModal').classList.remove('hidden');
+                throw new Error('Authentication required. Please sign in.');
+            }
+            return res;
+        }
+
+        // Check active cookie session on page load
+        async function checkAuthSession() {
+            try {
+                const res = await fetch(`${AUTH_API}/me`, { credentials: 'same-origin' });
+                if (!res.ok) throw new Error('Unauthorized');
+                const data = await res.json();
+
+                document.getElementById('authUsernameDisplay').textContent = `Logged in as: ${data.username}`;
+                document.getElementById('loginModal').classList.add('hidden');
+                loadDomains();
+            } catch (err) {
+                document.getElementById('loginModal').classList.remove('hidden');
+            }
+        }
+
+        function showLoginError(message) {
+            const box = document.getElementById('loginErrorBox');
+            const text = document.getElementById('loginErrorText');
+            text.textContent = message;
+            box.classList.remove('hidden');
+        }
+
+        function clearLoginError() {
+            document.getElementById('loginErrorBox').classList.add('hidden');
+        }
+
+        // Handle Login Form Submission
+        async function handleLogin(e) {
+            e.preventDefault();
+            clearLoginError();
+
+            const username = document.getElementById('loginUsername').value.trim();
+            const pwdInput = document.getElementById('loginPassword');
+            const password = pwdInput.value;
+            const submitBtn = document.getElementById('loginSubmitBtn');
+
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
+            submitBtn.textContent = 'Signing in...';
+
+            try {
+                const res = await fetch(`${AUTH_API}/login`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (!res.ok) {
+                    let msg = 'Invalid username or password.';
+                    try {
+                        const err = await res.json();
+                        if (err && (err.error || err.title)) msg = err.error || err.title;
+                    } catch (_) { }
+                    throw new Error(msg);
+                }
+
+                const data = await res.json();
+                clearLoginError();
+                document.getElementById('authUsernameDisplay').textContent = `Logged in as: ${data.username}`;
+                document.getElementById('loginModal').classList.add('hidden');
+                pwdInput.value = '';
+
+                showToast('Successfully logged in!');
+                if (currentTab === 'users') {
+                    loadUsers();
+                } else {
+                    loadDomains();
+                }
+            } catch (err) {
+                showLoginError(err.message || 'Invalid username or password.');
+                pwdInput.value = '';
+                pwdInput.focus();
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+                submitBtn.textContent = 'Sign In';
+            }
+        }
+
+        // Handle Logout
+        async function handleLogout() {
+            try {
+                await fetch(`${AUTH_API}/logout`, {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+            } catch (_) {
+                // Ignore network errors on logout and force UI back to login screen
+            }
+            domainsCache = [];
+            usersCache = [];
+            document.getElementById('authUsernameDisplay').textContent = '';
+            document.getElementById('loginModal').classList.remove('hidden');
+            showToast('Logged out successfully.');
+        }
+
+        // Tab Switching
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('section-domains').classList.toggle('hidden', tab !== 'domains');
+            document.getElementById('section-users').classList.toggle('hidden', tab !== 'users');
+
+            document.getElementById('tab-domains').className = tab === 'domains'
+                ? 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2'
+                : 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2';
+
+            document.getElementById('tab-users').className = tab === 'users'
+                ? 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2'
+                : 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2';
+
+            if (tab === 'domains') loadDomains();
+            if (tab === 'users') loadUsers();
+        }
+
+        // Toast Notification Helper
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toastIcon');
+            const msg = document.getElementById('toastMessage');
+
+            icon.className = isError ? 'fa-solid fa-circle-exclamation text-rose-400' : 'fa-solid fa-circle-check text-emerald-400';
+            msg.textContent = message;
+
+            toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+            }, 3500);
+        }
+
+        // Password Visibility & Cryptographic Generator
+        function togglePasswordVisibility(inputId, iconId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(iconId);
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.className = 'fa-solid fa-eye-slash text-xs text-blue-400';
+            } else {
+                input.type = 'password';
+                icon.className = 'fa-solid fa-eye text-xs';
+            }
+        }
+
+        function fillRandomPassword(inputId, iconId) {
+            const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+            const lower = 'abcdefghijkmnopqrstuvwxyz';
+            const digits = '23456789';
+            const symbols = '!@#$%^&*-_=+';
+            const all = upper + lower + digits + symbols;
+            const length = 10;
+
+            const randomValues = new Uint32Array(length);
+            window.crypto.getRandomValues(randomValues);
+
+            // Guarantee at least one character from each category
+            const chars = [
+                upper[randomValues[0] % upper.length],
+                lower[randomValues[1] % lower.length],
+                digits[randomValues[2] % digits.length],
+                symbols[randomValues[3] % symbols.length]
+            ];
+
+            for (let i = 4; i < length; i++) {
+                chars.push(all[randomValues[i] % all.length]);
+            }
+
+            // Fisher-Yates shuffle
+            const shuffleValues = new Uint32Array(chars.length);
+            window.crypto.getRandomValues(shuffleValues);
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = shuffleValues[i] % (i + 1);
+                [chars[i], chars[j]] = [chars[j], chars[i]];
+            }
+
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(iconId);
+            input.value = chars.join('');
+            // Automatically reveal the generated password so admin can copy/read it
+            input.type = 'text';
+            icon.className = 'fa-solid fa-eye-slash text-xs text-blue-400';
+        }
+
+        // ==========================================
+        // DOMAINS LOGIC
+        // ==========================================
+        async function loadDomains() {
+            const search = document.getElementById('domainSearch').value.trim();
+            const isEnabled = document.getElementById('domainStatusFilter').value;
+
+            let url = DOMAINS_API + '?';
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (isEnabled !== "") params.append('isEnabled', isEnabled);
+
+            try {
+                const res = await apiFetch(url + params.toString());
+                if (!res.ok) throw new Error('Failed to fetch domains');
+                domainsCache = await res.json();
+                renderDomainsTable(domainsCache);
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to load domains from server.', true);
+            }
+        }
+
+        function renderDomainsTable(domains) {
+            const tbody = document.getElementById('domainsTableBody');
+            const emptyState = document.getElementById('domainsEmptyState');
+            tbody.innerHTML = '';
+
+            if (!domains || domains.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            domains.forEach(d => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/30 transition-colors border-b border-slate-700/50';
+
+                const descText = d.description ? escapeHtml(d.description) : '<span class="text-slate-500 italic">No description</span>';
+                const statusBadge = d.isEnabled
+                    ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full"></span>Enabled</span>'
+                    : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
+
+                const escapedNameForJs = d.name.replace(/'/g, "\'");
+
+                tr.innerHTML = `
+                        <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
+                            <i class="fa-solid fa-globe text-blue-400 text-xs"></i>
+                            <span>${escapeHtml(d.name)}</span>
+                        </td>
+                        <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                        <td class="py-3.5 px-6 text-center">${statusBadge}</td>
+                        <td class="py-3.5 px-6 text-right">
+                            <button onclick="openEditDomainModal('${escapedNameForJs}')"
+                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                <i class="fa-solid fa-gear mr-1"></i> Manage
+                            </button>
+                        </td>
+                    `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openCreateDomainModal() {
+            document.getElementById('newDomainName').value = '';
+            document.getElementById('newDomainDesc').value = '';
+            document.getElementById('newDomainEnabled').checked = true;
+            document.getElementById('createDomainModal').classList.remove('hidden');
+        }
+        function closeCreateDomainModal() {
+            document.getElementById('createDomainModal').classList.add('hidden');
+        }
+
+        async function handleCreateDomain(e) {
+            e.preventDefault();
+            const payload = {
+                domainName: document.getElementById('newDomainName').value.trim(),
+                description: document.getElementById('newDomainDesc').value.trim() || null,
+                isEnabled: document.getElementById('newDomainEnabled').checked
+            };
+
+            try {
+                const res = await apiFetch(DOMAINS_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to create domain');
+                }
+                closeCreateDomainModal();
+                showToast(`Domain "${payload.domainName}" created successfully!`);
+                loadDomains();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        let currentEditingDomain = null;
+
+        function openEditDomainModal(name) {
+            const domain = domainsCache.find(d => d.name === name);
+            if (!domain) return;
+
+            currentEditingDomain = domain.name;
+            document.getElementById('editDomainNameDisplay').value = domain.name;
+            document.getElementById('editDomainDesc').value = domain.description || '';
+            document.getElementById('editDomainEnabled').checked = domain.isEnabled;
+            document.getElementById('editDomainModal').classList.remove('hidden');
+        }
+
+        function closeEditDomainModal() {
+            currentEditingDomain = null;
+            document.getElementById('editDomainModal').classList.add('hidden');
+        }
+
+        async function handleUpdateDomain(e) {
+            e.preventDefault();
+            if (!currentEditingDomain) return;
+
+            const payload = {
+                description: document.getElementById('editDomainDesc').value.trim() || null,
+                isEnabled: document.getElementById('editDomainEnabled').checked
+            };
+
+            try {
+                const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(currentEditingDomain)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error('Failed to update domain');
+                closeEditDomainModal();
+                showToast(`Domain "${currentEditingDomain}" updated successfully!`);
+                loadDomains();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        // ==========================================
+        // USERS & MAILBOXES LOGIC
+        // ==========================================
+        async function loadUsers() {
+            try {
+                const res = await apiFetch(USERS_API);
+                if (!res.ok) throw new Error('Failed to fetch users');
+                usersCache = await res.json();
+                filterUsersLocally();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to load users from server.', true);
+            }
+        }
+
+        function getDaysSince(dateString) {
+            if (!dateString) return null;
+            const parsed = new Date(dateString);
+            if (isNaN(parsed.getTime())) return null;
+            return Math.max(0, Math.floor((Date.now() - parsed.getTime()) / MS_PER_DAY));
+        }
+
+        function formatLastLoginBadge(lastLoginDate) {
+            if (!lastLoginDate) {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-700/70 text-slate-400 border border-slate-600/50">Never</span>`;
+            }
+            const parsed = new Date(lastLoginDate);
+            if (isNaN(parsed.getTime())) {
+                return `<span class="text-xs text-slate-500">Unknown</span>`;
+            }
+
+            const days = getDaysSince(lastLoginDate);
+            const dateStr = parsed.toLocaleDateString(navigator.languages);
+
+            if (days >= 90) {
+                return `
+                        <div class="text-xs text-rose-400 font-medium">${dateStr}</div>
+                        <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">${days}d inactive</span>
+                    `;
+            }
+            if (days >= 30) {
+                return `
+                        <div class="text-xs text-amber-400 font-medium">${dateStr}</div>
+                        <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">${days}d ago</span>
+                    `;
+            }
+            const relText = days === 0 ? 'Today' : (days === 1 ? 'Yesterday' : `${days}d ago`);
+            return `
+                    <div class="text-xs text-slate-300">${dateStr}</div>
+                    <div class="text-[11px] text-slate-500">${relText}</div>
+                `;
+        }
+
+        function filterUsersLocally() {
+            const query = document.getElementById('userSearch').value.trim().toLowerCase();
+            const statusFilter = document.getElementById('userStatusFilter').value;
+            const inactivityFilter = document.getElementById('userInactivityFilter').value;
+
+            const filtered = usersCache.filter(u => {
+                const matchesStatus = statusFilter === "" || String(u.isEnabled) === statusFilter;
+                if (!matchesStatus) return false;
+
+                if (inactivityFilter !== "") {
+                    if (inactivityFilter === "never") {
+                        if (u.lastLoginDate) return false;
+                    } else {
+                        const thresholdDays = parseInt(inactivityFilter, 10);
+                        const days = getDaysSince(u.lastLoginDate);
+                        // Include accounts that have never logged in OR haven't logged in within thresholdDays
+                        if (days !== null && days < thresholdDays) return false;
+                    }
+                }
+
+                if (!query) return true;
+                const inName = u.userName.toLowerCase().includes(query);
+                const inDesc = (u.description || '').toLowerCase().includes(query);
+                const inEmails = (u.emailAddresses || []).some(e => e.toLowerCase().includes(query));
+                return inName || inDesc || inEmails;
+            });
+
+            renderUsersTable(filtered);
+        }
+
+        function renderUsersTable(users) {
+            const tbody = document.getElementById('usersTableBody');
+            const emptyState = document.getElementById('usersEmptyState');
+            tbody.innerHTML = '';
+
+            if (!users || users.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            users.forEach(u => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/30 transition-colors border-b border-slate-700/50';
+
+                const descText = u.description ? escapeHtml(u.description) : '<span class="text-slate-500 italic">No description</span>';
+                const aliasesHtml = (u.emailAddresses && u.emailAddresses.length > 0)
+                    ? `<div class="flex flex-wrap gap-1">${u.emailAddresses.map(e => `<span class="inline-block bg-slate-900 border border-slate-700 text-slate-300 text-[11px] px-2 py-0.5 rounded font-mono">${escapeHtml(e)}</span>`).join('')}</div>`
+                    : '<span class="text-xs text-slate-500 italic">No aliases</span>';
+
+                const usageMB = (u.storageUsageBytes / BYTES_PER_MB).toFixed(1);
+                const quotaMB = Math.round(u.storageQuotaBytes / BYTES_PER_MB);
+                const pct = u.storageQuotaBytes > 0 ? Math.min(100, Math.round((u.storageUsageBytes / u.storageQuotaBytes) * 100)) : 0;
+                const barColor = pct > 90 ? 'bg-rose-500' : (pct > 75 ? 'bg-amber-500' : 'bg-blue-500');
+
+                const statusBadge = u.isEnabled
+                    ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full"></span>Enabled</span>'
+                    : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
+
+                tr.innerHTML = `
+                        <td class="py-3.5 px-6 font-medium text-slate-100 whitespace-nowrap">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-user text-blue-400 text-xs"></i>
+                                <span>${escapeHtml(u.userName)}</span>
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-6">${aliasesHtml}</td>
+                        <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">
+                            <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
+                            <div class="w-28 bg-slate-900 rounded-full h-1.5 border border-slate-700/60">
+                                <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-6 text-slate-300 text-xs font-mono whitespace-nowrap">${u.sentCountToday} / ${u.maxDailySends}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">${formatLastLoginBadge(u.lastLoginDate)}</td>
+                        <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
+                        <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                            <button onclick="openEditUserModal('${escapeHtml(u.userId)}')"
+                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                <i class="fa-solid fa-gear mr-1"></i> Manage
+                            </button>
+                        </td>
+                    `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Create User Modal
+        function openCreateUserModal() {
+            document.getElementById('newUserName').value = '';
+            const pwdInput = document.getElementById('newUserPassword');
+            pwdInput.value = '';
+            pwdInput.type = 'password';
+            document.getElementById('newUserPwdEye').className = 'fa-solid fa-eye text-xs';
+            document.getElementById('newUserDesc').value = '';
+            document.getElementById('newUserQuotaMB').value = '10240';
+            document.getElementById('newUserMaxSends').value = '500';
+            document.getElementById('createUserModal').classList.remove('hidden');
+        }
+        function closeCreateUserModal() {
+            document.getElementById('createUserModal').classList.add('hidden');
+        }
+
+        async function handleCreateUser(e) {
+            e.preventDefault();
+            const quotaMB = parseInt(document.getElementById('newUserQuotaMB').value, 10) || 10240;
+            const payload = {
+                userName: document.getElementById('newUserName').value.trim(),
+                password: document.getElementById('newUserPassword').value,
+                description: document.getElementById('newUserDesc').value.trim() || null,
+                storageQuotaBytes: quotaMB * BYTES_PER_MB,
+                maxDailySends: parseInt(document.getElementById('newUserMaxSends').value, 10) || 500
+            };
+
+            try {
+                const res = await apiFetch(USERS_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to create user');
+                }
+                const responseData = await res.json().catch(() => null);
+                closeCreateUserModal();
+                showToast(`User "${payload.userName}" created successfully!`);
+
+                // Refresh the users cache from the server
+                await loadUsers();
+
+                // Automatically transition into the edit modal for this new user
+                const createdUser = (responseData && responseData.userId)
+                    ? usersCache.find(u => u.userId === responseData.userId)
+                    : usersCache.find(u => u.userName.toLowerCase() === payload.userName.toLowerCase());
+
+                if (createdUser) {
+                    openEditUserModal(createdUser.userId);
+                }
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        // Edit User Modal
+        let currentEditingUser = null;
+
+        function openEditUserModal(userId) {
+            const user = usersCache.find(u => u.userId === userId);
+            if (!user) return;
+
+            currentEditingUser = user;
+            document.getElementById('editUserNameDisplay').value = user.userName;
+            const pwdInput = document.getElementById('editUserPassword');
+            pwdInput.value = '';
+            pwdInput.type = 'password';
+            document.getElementById('editUserPwdEye').className = 'fa-solid fa-eye text-xs';
+            document.getElementById('editUserDesc').value = user.description || '';
+            document.getElementById('editUserQuotaMB').value = Math.round(user.storageQuotaBytes / BYTES_PER_MB);
+            document.getElementById('editUserMaxSends').value = user.maxDailySends;
+            document.getElementById('editUserEnabled').checked = user.isEnabled;
+            document.getElementById('newUserAliasInput').value = '';
+
+            const createdStr = user.createDate ? `Created: ${new Date(user.createDate).toLocaleDateString(navigator.languages)}` : '';
+            const loginStr = user.lastLoginDate ? `Last login: ${new Date(user.lastLoginDate).toLocaleString(navigator.languages)}` : 'Last login: Never';
+            document.getElementById('editUserAuditInfo').textContent = [createdStr, loginStr].filter(Boolean).join(' • ');
+
+            renderUserAliasesList(user.emailAddresses || []);
+            document.getElementById('editUserModal').classList.remove('hidden');
+        }
+
+        function closeEditUserModal() {
+            currentEditingUser = null;
+            document.getElementById('editUserModal').classList.add('hidden');
+        }
+
+        function renderUserAliasesList(emails) {
+            const ul = document.getElementById('userAliasesList');
+            ul.innerHTML = '';
+
+            if (!emails || emails.length === 0) {
+                ul.innerHTML = '<li class="px-3 py-3 text-xs text-slate-500 text-center italic">No email addresses assigned to this user.</li>';
+                return;
+            }
+
+            emails.forEach(email => {
+                const li = document.createElement('li');
+                li.className = 'px-3 py-2 flex items-center justify-between text-xs hover:bg-slate-800/60 transition-colors';
+                const escapedEmailJs = email.replace(/'/g, "\'");
+                li.innerHTML = `
+                        <span class="font-mono text-slate-200 flex items-center space-x-2">
+                            <i class="fa-solid fa-envelope text-blue-400"></i>
+                            <span>${escapeHtml(email)}</span>
+                        </span>
+                        <button type="button" onclick="openDeleteConfirmModal('user-email', '${escapedEmailJs}')"
+                                title="Remove email address"
+                                class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded hover:bg-rose-500/10 transition-colors">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    `;
+                ul.appendChild(li);
+            });
+        }
+
+        async function handleUpdateUser(e) {
+            e.preventDefault();
+            if (!currentEditingUser) return;
+
+            const rawPwd = document.getElementById('editUserPassword').value;
+            const quotaMB = parseInt(document.getElementById('editUserQuotaMB').value, 10) || 10240;
+
+            const payload = {
+                password: rawPwd.length > 0 ? rawPwd : null,
+                description: document.getElementById('editUserDesc').value.trim() || null,
+                isEnabled: document.getElementById('editUserEnabled').checked,
+                storageQuotaBytes: quotaMB * BYTES_PER_MB,
+                maxDailySends: parseInt(document.getElementById('editUserMaxSends').value, 10) || 500
+            };
+
+            try {
+                const res = await apiFetch(`${USERS_API}/${encodeURIComponent(currentEditingUser.userId)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to update user');
+                }
+                const updatedName = currentEditingUser.userName;
+                closeEditUserModal();
+                showToast(`User "${updatedName}" updated successfully!`);
+                loadUsers();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        async function handleAddUserEmail() {
+            if (!currentEditingUser) return;
+            const input = document.getElementById('newUserAliasInput');
+            const emailAddress = input.value.trim().toLowerCase();
+            if (!emailAddress) return;
+
+            try {
+                const res = await apiFetch(`${USERS_API}/${encodeURIComponent(currentEditingUser.userId)}/emails`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ emailAddress })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Failed to add email address');
+                }
+
+                input.value = '';
+                currentEditingUser.emailAddresses = [...(currentEditingUser.emailAddresses || []), emailAddress];
+                renderUserAliasesList(currentEditingUser.emailAddresses);
+                showToast(`Added "${emailAddress}" to ${currentEditingUser.userName}.`);
+                loadUsers();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        // ==========================================
+        // SHARED DELETE CONFIRMATION MODAL
+        // ==========================================
+        function openDeleteConfirmModal(context, targetValue = null) {
+            deleteContext = context;
+            pendingDeleteEmail = targetValue;
+
+            if (context === 'domain' && currentEditingDomain) {
+                document.getElementById('deleteConfirmTitle').textContent = 'Delete Domain?';
+                document.getElementById('deleteConfirmText').innerHTML = `Are you sure you want to delete domain <strong class="text-slate-200">${escapeHtml(currentEditingDomain)}</strong>? This action cannot be undone.`;
+                document.getElementById('deleteConfirmModal').classList.remove('hidden');
+            } else if (context === 'user' && currentEditingUser) {
+                document.getElementById('deleteConfirmTitle').textContent = 'Delete User Account?';
+                document.getElementById('deleteConfirmText').innerHTML = `Are you sure you want to delete user <strong class="text-slate-200">${escapeHtml(currentEditingUser.userName)}</strong> and all associated email aliases? This action cannot be undone.`;
+                document.getElementById('deleteConfirmModal').classList.remove('hidden');
+            } else if (context === 'user-email' && currentEditingUser && pendingDeleteEmail) {
+                document.getElementById('deleteConfirmTitle').textContent = 'Remove Email Address?';
+                document.getElementById('deleteConfirmText').innerHTML = `Are you sure you want to remove <strong class="text-slate-200 font-mono">${escapeHtml(pendingDeleteEmail)}</strong> from user <strong class="text-slate-200">${escapeHtml(currentEditingUser.userName)}</strong>?`;
+                document.getElementById('deleteConfirmModal').classList.remove('hidden');
+            }
+        }
+
+        function closeDeleteConfirmModal() {
+            deleteContext = null;
+            pendingDeleteEmail = null;
+            document.getElementById('deleteConfirmModal').classList.add('hidden');
+        }
+
+        async function executeDeleteTarget() {
+            if (deleteContext === 'domain' && currentEditingDomain) {
+                const targetDomain = currentEditingDomain;
+                try {
+                    const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(targetDomain)}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete domain');
+                    closeDeleteConfirmModal();
+                    closeEditDomainModal();
+                    showToast(`Domain "${targetDomain}" deleted.`);
+                    loadDomains();
+                } catch (err) {
+                    showToast(err.message, true);
+                }
+            } else if (deleteContext === 'user' && currentEditingUser) {
+                const targetUser = currentEditingUser;
+                try {
+                    const res = await apiFetch(`${USERS_API}/${encodeURIComponent(targetUser.userId)}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete user');
+                    closeDeleteConfirmModal();
+                    closeEditUserModal();
+                    showToast(`User "${targetUser.userName}" deleted.`);
+                    loadUsers();
+                } catch (err) {
+                    showToast(err.message, true);
+                }
+            } else if (deleteContext === 'user-email' && currentEditingUser && pendingDeleteEmail) {
+                const targetEmail = pendingDeleteEmail;
+                try {
+                    const res = await apiFetch(`${USERS_API}/${encodeURIComponent(currentEditingUser.userId)}/emails`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ emailAddress: targetEmail })
+                    });
+                    if (!res.ok) {
+                        const err = await res.json();
+                        throw new Error(err.error || 'Failed to remove email address');
+                    }
+                    closeDeleteConfirmModal();
+                    currentEditingUser.emailAddresses = (currentEditingUser.emailAddresses || []).filter(e => e !== targetEmail);
+                    renderUserAliasesList(currentEditingUser.emailAddresses);
+                    showToast(`Removed "${targetEmail}".`);
+                    loadUsers();
+                } catch (err) {
+                    showToast(err.message, true);
+                }
+            }
+        }
+
+        // Utility Escaping
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        // Initial Session Check on Load
+        checkAuthSession();
+    </script>
+</body>
+</html>
