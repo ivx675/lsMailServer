@@ -34,25 +34,29 @@ namespace lsMailServer.Services
         private SMTP_Server? _smtpServer;
         private POP3_Server? _pop3Server;
         private IMAP_Server? _imapServer;
+        private SmtpRelayService _relayServer;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MailServerHostedService"/> class with required 
-        /// infrastructure, configuration, database, and mailstore dependencies.
+        /// infrastructure, configuration, database, mailstore, and SMTP relay dependencies.
         /// </summary>
         /// <param name="logger">The logger instance used for tracking background service lifecycle events, requests, and errors.</param>
         /// <param name="configuration">The application configuration provider used to read server endpoints and security settings.</param>
         /// <param name="dbService">The database service handling user metadata, quotas, and system-level database operations.</param>
         /// <param name="mailStoreService">The mailstore service responsible for mailbox folder operations and message stream management.</param>
+        /// <param name="relayService">The SMTP relay service responsible for queuing and delivering outbound messages to remote mail servers.</param>
         public MailServerHostedService(
             ILogger<MailServerHostedService> logger,
             IConfiguration configuration,
             DatabaseService dbService,
-            MailStoreService mailStoreService)
+            MailStoreService mailStoreService,
+            SmtpRelayService relayService)
         {
             _logger = logger;
             _configuration = configuration;
             _dbService = dbService;
             _mailStoreService = mailStoreService;
+            _relayServer = relayService;
         }
 
 
@@ -169,6 +173,9 @@ namespace lsMailServer.Services
                             if (_dbService.DomainExists(eArgs.RcptTo.Domain)) {
                                 eArgs.Response = new SMTP_ServerResponse(550, new SMTP_t_EnhancedStatusCode(5,1,1), "User unknown.");
                             }
+                            else if (eArgs.Session.IsAuthenticated) {
+                                eArgs.Response = new SMTP_ServerResponse(250, new SMTP_t_EnhancedStatusCode(2,1,5), "Recipient ok.");
+                            }
                             else {
                                 eArgs.Response = new SMTP_ServerResponse(550,new SMTP_t_EnhancedStatusCode(5,7,1), "Relay access denied.");
                             }
@@ -204,6 +211,7 @@ namespace lsMailServer.Services
                 // Raised when message successfully stored by server.
                 e.Session.MessageStoringCompleteAsync += async (eArgs) => {
                     try {
+                        var from = eArgs.Session.From!;
                         foreach(var recipient in eArgs.Session.To) {
                             UserInfo? user = await _dbService.ResolveUserAsync(recipient.Mailbox);
                             // Local user
@@ -212,7 +220,16 @@ namespace lsMailServer.Services
                             }
                             // External recipient (relay)
                             else {
-                                // TODO: Implement relay logic for external recipients
+                                await _relayServer.StoreMessageAsync(
+                                    from.Mailbox,
+                                    recipient.Mailbox,
+                                    from.SmtpUtf8,
+                                    eArgs.Stream,
+                                    from.ENVID,
+                                    recipient.ORCPT,
+                                    from.RET,
+                                    recipient.Notify
+                                );
                             }
                         }
 

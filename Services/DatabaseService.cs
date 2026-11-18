@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -314,8 +315,11 @@ namespace lsMailServer.Services
         /// <returns>An enumerable collection of <see cref="UserInfo"/> records representing matching user accounts.</returns>
         public IEnumerable<UserInfo> GetUsers(string? search = null)
         {
+            string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
             using var connection = CreateConnection();
             using var cmd = connection.CreateCommand();
+            cmd.Parameters.AddWithValue("@today", todayStr);
 
             var query = new System.Text.StringBuilder(@"
                 SELECT 
@@ -325,7 +329,7 @@ namespace lsMailServer.Services
                     u.QuotaMailboxSize, 
                     u.QuotaCurrentUsageBytes,
                     u.QuotaMaxDailySends,
-                    u.QuotaSentCountToday,
+                    CASE WHEN u.QuotaLastSendDate = @today THEN u.QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
                     u.CreateDate, 
                     u.LastLoginDate,
                     u.Enabled,
@@ -367,7 +371,7 @@ namespace lsMailServer.Services
             while (reader.Read()) {
                 string emailsString = reader.IsDBNull(ordAllEmails) ? "" : reader.GetString(ordAllEmails);
                 var emailList = emailsString.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries).ToList();
-        
+
                 users.Add(new UserInfo(
                     UserId: reader.GetInt64(ordUserId),
                     UserName: reader.GetString(ordUserName),
@@ -377,8 +381,8 @@ namespace lsMailServer.Services
                     QuotaCurrentUsageBytes: reader.GetInt64(ordQuotaCurrentUsageBytes),
                     QuotaMaxDailySends: reader.GetInt32(ordQuotaMaxDailySends),
                     QuotaSentCountToday: reader.GetInt32(ordQuotaSentCountToday),
-                    CreateDate: DateTime.Parse(reader.GetString(ordCreateDate)),
-                    LastLoginDate: reader.IsDBNull(ordLastLoginDate) ? (DateTime?)null : DateTime.Parse(reader.GetString(ordLastLoginDate)),
+                    CreateDate: DateTime.Parse(reader.GetString(ordCreateDate), CultureInfo.InvariantCulture),
+                    LastLoginDate: reader.IsDBNull(ordLastLoginDate) ? (DateTime?)null : DateTime.Parse(reader.GetString(ordLastLoginDate), CultureInfo.InvariantCulture),
                     IsEnabled: reader.GetInt32(ordEnabled) == 1
                 ));
             }
@@ -403,6 +407,8 @@ namespace lsMailServer.Services
             if (string.IsNullOrWhiteSpace(userName))
                 return null;
 
+            string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
             using var connection = CreateConnection();
             connection.Open();
             using var cmd = connection.CreateCommand();
@@ -417,13 +423,14 @@ namespace lsMailServer.Services
                     QuotaMailboxSize, 
                     QuotaCurrentUsageBytes,
                     QuotaMaxDailySends,
-                    QuotaSentCountToday,
+                    CASE WHEN QuotaLastSendDate = @today THEN QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
                     CreateDate,
                     LastLoginDate
                 FROM Users 
                 WHERE UserName = @userName;
             ";
 
+            cmd.Parameters.AddWithValue("@today", todayStr);
             cmd.Parameters.AddWithValue("@userName", userName.Trim().ToLowerInvariant());
 
             long userId;
@@ -452,8 +459,8 @@ namespace lsMailServer.Services
                 currentUsageBytes = reader.GetInt64(reader.GetOrdinal("QuotaCurrentUsageBytes"));
                 maxDailySends = reader.GetInt32(reader.GetOrdinal("QuotaMaxDailySends"));
                 sentCountToday = reader.GetInt32(reader.GetOrdinal("QuotaSentCountToday"));
-                createDate = DateTime.Parse(reader.GetString(reader.GetOrdinal("CreateDate")));
-                lastLoginDate = reader.IsDBNull(reader.GetOrdinal("LastLoginDate")) ? (DateTime?)null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastLoginDate")));
+                createDate = DateTime.Parse(reader.GetString(reader.GetOrdinal("CreateDate")), CultureInfo.InvariantCulture);
+                lastLoginDate = reader.IsDBNull(reader.GetOrdinal("LastLoginDate")) ? (DateTime?)null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastLoginDate")), CultureInfo.InvariantCulture);
             }
 
             // 2. Fetch all associated email addresses from UserEmailAddresses

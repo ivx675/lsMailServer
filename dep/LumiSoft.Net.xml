@@ -53798,210 +53798,170 @@
             the final reply code that represents the outcome of the operation.
             </returns>
         </member>
-        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFrom(System.String,System.Int64)">
-            <summary>
-            Synchronously sends the SMTP <c>MAIL FROM</c> command using the specified
-            sender address and an optional <c>SIZE</c> parameter, depending on the
-            server's advertised capabilities.
-            </summary>
-            <param name="from">
-            The envelope sender address to present to the server.
-            </param>
-            <param name="messageSize">
-            The message size in bytes. A value of <c>-1</c> indicates that no
-            <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter is only
-            included when the server supports the extension and the value is greater
-            than zero.
-            </param>
-            <exception cref="T:System.ObjectDisposedException">
-            Thrown if the client instance has already been disposed.
-            </exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if the client is not connected.
-            </exception>
-            <exception cref="T:System.ArgumentNullException">
-            Thrown if <paramref name="from"/> is <c>null</c>.
-            </exception>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="from"/> is an empty string.
-            </exception>
-            <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
-            Thrown when the server does not return a successful <c>250</c> reply,
-            indicating that the <c>MAIL FROM</c> command failed.
-            </exception>
-            <remarks>
-            This overload sends the <c>MAIL FROM</c> command without any delivery
-            status notification parameters. It delegates to the full method that
-            supports <c>RET</c> and <c>ENVID</c>, passing default values for both.
-            </remarks>
-            <returns>
-            The SMTP reply produced by the remote endpoint.  
-            The returned <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains all reply lines and
-            the final reply code that represents the outcome of the operation.
-            </returns>
+        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFrom(System.String,System.Int64,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String,System.Boolean)">
+             <summary>
+             Sends the SMTP <c>MAIL FROM</c> command using the specified sender address
+             and optional ESMTP extension parameters.
+             </summary>
+             <param name="from">
+             The sender email address supplied to the SMTP server in the
+             <c>MAIL FROM</c> command. This value may differ from the address
+             specified in the message's <c>From:</c> header. Specify an empty
+             string to use the null reverse-path ("&lt;&gt;").
+             </param>
+             <param name="messageSize">
+             The message size in bytes. A value less than or equal to zero indicates
+             that no <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter
+             is included only when the server advertises support for the extension
+             and a positive value is specified.
+             </param>
+             <param name="ret">
+             The delivery status notification return option. The default value is
+             <see cref="F:LumiSoft.Net.SMTP.SMTP_t_DSN_Ret.NotSpecified"/>. This parameter is included
+             only when the server advertises support for the <c>DSN</c> extension.
+             </param>
+             <param name="envid">
+             An optional envelope identifier associated with the message for delivery
+             status notification tracking. The default value is <c>null</c>. This
+             parameter is included only when specified and the server advertises
+             support for the <c>DSN</c> extension.
+             </param>
+             <param name="smtpUtf8">
+             Specifies whether the <c>SMTPUTF8</c> parameter, defined by RFC 6531,
+             should be included in the <c>MAIL FROM</c> command. The default value
+             is <c>false</c>.
+            
+             Set this parameter to <c>true</c> when internationalized email addresses
+             containing non-ASCII characters are used in the <c>MAIL FROM</c> or
+             <c>RCPT TO</c> commands. For example, the address
+             <c>jüri@example.com</c> requires <c>SMTPUTF8</c>.
+            
+             When <c>true</c>, the <c>SMTPUTF8</c> parameter is always sent. No
+             capability check is performed by this method. If the server does not
+             support the <c>SMTPUTF8</c> extension, it is expected to reject the
+             command.
+             </param>
+             <exception cref="T:System.ObjectDisposedException">
+             Thrown if the client instance has already been disposed.
+             </exception>
+             <exception cref="T:System.InvalidOperationException">
+             Thrown if the client is not connected or if <c>EHLO</c> or <c>HELO</c>
+             has not been issued before calling this method.
+             </exception>
+             <exception cref="T:System.ArgumentNullException">
+             Thrown if <paramref name="from"/> is <c>null</c>.
+             </exception>
+             <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
+             Thrown when the server rejects the <c>MAIL FROM</c> command and does not
+             return a successful <c>250</c> reply.
+             </exception>
+             <remarks>
+             <para>
+             This method blocks the calling thread until the SMTP operation completes.
+             </para>
+             <para>
+             This method is a synchronous wrapper around
+             <see cref="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFromAsync(System.String,System.Int64,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String,System.Boolean,System.Threading.CancellationToken)"/>
+             and provides identical behavior.
+             </para>
+             <para>
+             If the command succeeds, the specified MAIL FROM address is stored
+             internally and becomes the current sender address for subsequent
+             <c>RCPT TO</c> and message transfer commands.
+             </para>
+             </remarks>
+             <returns>
+             The server response to the <c>MAIL FROM</c> command. The returned
+             <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains the complete SMTP reply,
+             including all reply lines and the final reply code.
+             </returns>
         </member>
-        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFrom(System.String,System.Int64,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String)">
-            <summary>
-            Synchronously sends the SMTP <c>MAIL FROM</c> command using the specified
-            sender address and optional ESMTP parameters such as <c>SIZE</c>,
-            <c>RET</c>, and <c>ENVID</c>, depending on the server's advertised
-            capabilities.
-            </summary>
-            <param name="from">
-            The envelope sender address to present to the server.
-            </param>
-            <param name="messageSize">
-            The message size in bytes. A value of <c>-1</c> indicates that no
-            <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter is only
-            included when the server supports the extension and the value is greater
-            than zero.
-            </param>
-            <param name="ret">
-            The delivery status notification return option. Used only when the
-            server supports the <c>DSN</c> extension.
-            </param>
-            <param name="envid">
-            An optional envelope identifier included in delivery status notifications.
-            Used only when the server supports the <c>DSN</c> extension.
-            </param>
-            <exception cref="T:System.ObjectDisposedException">
-            Thrown if the client instance has already been disposed.
-            </exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if the client is not connected.
-            </exception>
-            <exception cref="T:System.ArgumentNullException">
-            Thrown if <paramref name="from"/> is <c>null</c>.
-            </exception>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="from"/> is an empty string.
-            </exception>
-            <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
-            Thrown when the server does not return a successful <c>250</c> reply,
-            indicating that the <c>MAIL FROM</c> command failed.
-            </exception>
-            <remarks>
-            This method blocks the calling thread until the <c>MAIL FROM</c>
-            operation completes. The asynchronous implementation constructs the
-            command and conditionally appends ESMTP parameters based on the server's
-            advertised capabilities. On success, the current envelope sender value is
-            stored internally so subsequent recipient commands can be issued.
-            </remarks>
-            <returns>
-            The SMTP reply produced by the remote endpoint.  
-            The returned <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains all reply lines and
-            the final reply code that represents the outcome of the operation.
-            </returns>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFromAsync(System.String,System.Int64,System.Threading.CancellationToken)">
-            <summary>
-            Sends the SMTP <c>MAIL FROM</c> command asynchronously using the specified
-            sender address and an optional <c>SIZE</c> parameter, depending on the
-            server's advertised capabilities.
-            </summary>
-            <param name="from">
-            The envelope sender address to present to the server.
-            </param>
-            <param name="messageSize">
-            The message size in bytes. A value of <c>-1</c> indicates that no
-            <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter is only
-            included when the server supports the extension and the value is greater
-            than zero.
-            </param>
-            <param name="cancellationToken">
-            A token that may be used to cancel the asynchronous read operation.
-            </param>
-            <exception cref="T:System.ObjectDisposedException">
-            Thrown if the client instance has already been disposed.
-            </exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if <c>EhloHeloAsync</c> has not been issued before calling this method.
-            </exception>
-            <exception cref="T:System.ArgumentNullException">
-            Thrown if <paramref name="from"/> is <c>null</c>.
-            </exception>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="from"/> is an empty string.
-            </exception>
-            <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
-            Thrown when the server does not return a successful <c>250</c> reply,
-            indicating that the <c>MAIL FROM</c> command failed.
-            </exception>
-            <remarks>
-            This overload sends the <c>MAIL FROM</c> command without any delivery
-            status notification parameters. It delegates to the full asynchronous
-            method that supports <c>RET</c> and <c>ENVID</c>, passing default values
-            for both.
-            </remarks>
-            <returns>
-            A task that completes with the SMTP reply produced by the remote endpoint.  
-            The returned <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains all reply lines and
-            the final reply code that represents the outcome of the operation.
-            </returns>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFromAsync(System.String,System.Int64,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String,System.Threading.CancellationToken)">
-            <summary>
-            Sends the SMTP <c>MAIL FROM</c> command using the specified sender address
-            and optional ESMTP parameters such as <c>SIZE</c>, <c>RET</c>, and
-            <c>ENVID</c>, depending on the server's advertised capabilities.
-            </summary>
-            <param name="from">
-            The envelope sender address to present to the server.
-            </param>
-            <param name="messageSize">
-            The message size in bytes. A value of <c>-1</c> indicates that no
-            <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter is only
-            included when the server supports the extension and the value is greater
-            than zero.
-            </param>
-            <param name="ret">
-            The delivery status notification return option. Used only when the
-            server supports the <c>DSN</c> extension.
-            </param>
-            <param name="envid">
-            An optional envelope identifier included in delivery status notifications.
-            Used only when the server supports the <c>DSN</c> extension.
-            </param>
-            <param name="cancellationToken">
-            A token that may be used to cancel the asynchronous read operation.
-            </param>
-            <exception cref="T:System.ObjectDisposedException">
-            Thrown if the client instance has already been disposed.
-            </exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if <c>EhloHeloAsync</c> has not been issued before calling this method.
-            </exception>
-            <exception cref="T:System.ArgumentNullException">
-            Thrown if <paramref name="from"/> is <c>null</c>.
-            </exception>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="from"/> is an empty string.
-            </exception>
-            <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
-            Thrown when the server does not return a successful <c>250</c> reply,
-            indicating that the <c>MAIL FROM</c> command failed.
-            </exception>
-            <remarks>
-            <para>
-            This method constructs the <c>MAIL FROM</c> command and conditionally
-            appends ESMTP parameters based on the server's advertised capabilities.
-            The <c>SIZE</c> parameter is included only when the server supports the
-            message size extension and a positive size value is provided.
-            </para>
-            <para>
-            The <c>RET</c> and <c>ENVID</c> parameters are included only when the
-            server supports delivery status notifications via the <c>DSN</c> extension.
-            </para>
-            <para>
-            On success, the current envelope sender value is stored internally so
-            subsequent recipient commands can be issued.
-            </para>
-            </remarks>
-            <returns>
-            A task that completes with the SMTP reply produced by the remote endpoint.  
-            The returned <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains all reply lines and
-            the final reply code that represents the outcome of the operation.
-            </returns>
+        <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.MailFromAsync(System.String,System.Int64,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String,System.Boolean,System.Threading.CancellationToken)">
+             <summary>
+             Sends the SMTP <c>MAIL FROM</c> command using the specified sender address
+             and optional ESMTP extension parameters.
+             </summary>
+             <param name="from">
+             The sender email address supplied to the SMTP server in the
+             <c>MAIL FROM</c> command. This value may differ from the address
+             specified in the message's <c>From:</c> header. Specify an empty
+             string to use the null reverse-path ("&lt;&gt;").
+             </param>
+             <param name="messageSize">
+             The message size in bytes. A value less than or equal to zero indicates
+             that no <c>SIZE</c> parameter should be sent. The <c>SIZE</c> parameter
+             is included only when the server advertises support for the extension
+             and a positive value is specified.
+             </param>
+             <param name="ret">
+             The delivery status notification return option. The default value is
+             <see cref="F:LumiSoft.Net.SMTP.SMTP_t_DSN_Ret.NotSpecified"/>. This parameter is included
+             only when the server advertises support for the <c>DSN</c> extension.
+             </param>
+             <param name="envid">
+             An optional envelope identifier associated with the message for delivery
+             status notification tracking. The default value is <c>null</c>. This
+             parameter is included only when specified and the server advertises
+             support for the <c>DSN</c> extension.
+             </param>
+             <param name="smtpUtf8">
+             Specifies whether the <c>SMTPUTF8</c> parameter, defined by RFC 6531,
+             should be included in the <c>MAIL FROM</c> command. The default value
+             is <c>false</c>.
+            
+             Set this parameter to <c>true</c> when internationalized email addresses
+             containing non-ASCII characters are used in the <c>MAIL FROM</c> or
+             <c>RCPT TO</c> commands. For example, the address
+             <c>jüri@example.com</c> requires <c>SMTPUTF8</c>.
+            
+             When <c>true</c>, the <c>SMTPUTF8</c> parameter is always sent. No
+             capability check is performed by this method. If the server does not
+             support the <c>SMTPUTF8</c> extension, it is expected to reject the
+             command.
+             </param>
+             <param name="cancellationToken">
+             A token that can be used to cancel the asynchronous operation.
+             </param>
+             <exception cref="T:System.ObjectDisposedException">
+             Thrown if the client instance has already been disposed.
+             </exception>
+             <exception cref="T:System.InvalidOperationException">
+             Thrown if the client is not connected or if <c>EHLO</c> or <c>HELO</c>
+             has not been issued before calling this method.
+             </exception>
+             <exception cref="T:System.ArgumentNullException">
+             Thrown if <paramref name="from"/> is <c>null</c>.
+             </exception>
+             <exception cref="T:LumiSoft.Net.SMTP.Client.SMTP_ClientException">
+             Thrown when the server rejects the <c>MAIL FROM</c> command and does not
+             return a successful <c>250</c> reply.
+             </exception>
+             <remarks>
+             <para>
+             This method constructs and sends the SMTP <c>MAIL FROM</c> command as
+             defined by RFC 5321.
+             </para>
+             <para>
+             The <c>SIZE</c> parameter is included only when the server advertises
+             support for the SMTP Service Extension for Message Size Declaration
+             and a positive <paramref name="messageSize"/> value is provided.
+             </para>
+             <para>
+             The <c>RET</c> and <c>ENVID</c> parameters are included only when the
+             server advertises support for the <c>DSN</c> extension.
+             </para>
+             <para>
+             If the command succeeds, the specified MAIL FROM address is stored
+             internally and becomes the current sender address for subsequent
+             <c>RCPT TO</c> and message transfer commands.
+             </para>
+             </remarks>
+             <returns>
+             A task that completes with the server response to the
+             <c>MAIL FROM</c> command. The returned
+             <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> contains the complete SMTP reply,
+             including all reply lines and the final reply code.
+             </returns>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Client.SMTP_Client.RcptTo(System.String)">
             <summary>
@@ -56345,7 +56305,7 @@
         <member name="P:LumiSoft.Net.SMTP.Server.SMTP_Server.ServiceExtentions">
             <summary>
             Gets or sets SMTP server supported service extentions.
-            Supported values: PIPELINING,SIZE,STARTTLS,8BITMIME,CHUNKING,DSN.
+            Supported values: PIPELINING,SIZE,STARTTLS,8BITMIME,CHUNKING,DSN,SMTPUTF8.
             </summary>
             <exception cref="T:System.ObjectDisposedException">Is raised when this object is disposed and this property is accessed.</exception>
             <exception cref="T:System.ArgumentNullException">Is raised when null reference passed.</exception>
@@ -56703,10 +56663,11 @@
         </member>
         <member name="T:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom">
             <summary>
-            This class holds MAIL FROM: command value.
+            Represents the value of an SMTP MAIL FROM command, including the
+            reverse-path mailbox and any associated ESMTP parameters.
             </summary>
         </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.#ctor(System.String,System.Nullable{System.Int32},System.String,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String)">
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.#ctor(System.String,System.Nullable{System.Int32},System.String,LumiSoft.Net.SMTP.SMTP_t_DSN_Ret,System.String,System.Boolean)">
             <summary>
             Initializes a new instance of the <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom"/> class,
             representing the parsed MAIL FROM envelope and its optional parameters.
@@ -56717,12 +56678,12 @@
             </param>
             <param name="size">
             The SIZE parameter value, indicating the message size declared by the
-            client. A value of zero means the parameter was not supplied.
+            client. A value of <c>null</c> indicates that the parameter was not supplied.
             </param>
             <param name="body">
             The BODY parameter value (7BIT, 8BITMIME, or BINARYMIME). Modern servers
             typically validate this parameter but do not enforce it, except for
-            BINARYMIME which requires CHUNKING/BDAT support.
+            BINARYMIME, which requires CHUNKING/BDAT support.
             </param>
             <param name="ret">
             The DSN RET parameter (FULL or HDRS), specifying the amount of message
@@ -56731,6 +56692,10 @@
             <param name="envid">
             The DSN ENVID parameter, providing a client-supplied envelope identifier.
             May be <c>null</c> if not present.
+            </param>
+            <param name="smtpUtf8">
+            Indicates whether the SMTPUTF8 parameter was supplied with the MAIL FROM
+            command, as defined by RFC 6531.
             </param>
             <exception cref="T:System.ArgumentNullException">
             Thrown if <paramref name="mailbox"/> is <c>null</c>.
@@ -56788,6 +56753,20 @@
             to correlate Delivery Status Notifications with the original message.
             The value is <c>null</c> if the parameter was not provided.
             </value>
+        </member>
+        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.SmtpUtf8">
+            <summary>
+            Gets a value indicating whether the SMTPUTF8 parameter was supplied
+            with the MAIL FROM command, as defined by RFC 6531.
+            </summary>
+            <value>
+            <c>true</c> if the client specified the SMTPUTF8 parameter;
+            otherwise, <c>false</c>.
+            </value>
+            <remarks>
+            When <c>true</c>, the client requests SMTPUTF8 support and the
+            envelope and message headers may contain UTF-8 characters.
+            </remarks>
         </member>
         <member name="T:LumiSoft.Net.SMTP.Server.SMTP_t_RcptTo">
             <summary>
@@ -57112,6 +57091,11 @@
         <member name="F:LumiSoft.Net.SMTP.SMTP_ServiceExtensions.FUTURERELEASE">
             <summary>
             Future Message Release. Defined in RFC 4865.
+            </summary>
+        </member>
+        <member name="F:LumiSoft.Net.SMTP.SMTP_ServiceExtensions.SMTPUTF8">
+            <summary>
+            SMTP Extension for Internationalized Email. Defined in RFC 6531.
             </summary>
         </member>
         <member name="T:LumiSoft.Net.SMTP.SMTP_t_DSN_Notify">

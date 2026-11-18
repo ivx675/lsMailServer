@@ -32,6 +32,15 @@ namespace lsMailServer
             // 4. Pass the data directory path into your database initializer
             builder.Services.AddSingleton(new DatabaseService(dataDir));
             builder.Services.AddSingleton(sp => new MailStoreService(sp.GetRequiredService<DatabaseService>(), mailStoreDir));
+            builder.Services.AddSingleton<SmtpRelayService>(sp => 
+                new SmtpRelayService(
+                    sp.GetRequiredService<ILogger<SmtpRelayService>>(),
+                    sp.GetRequiredService<IConfiguration>(),
+                    mailStoreDir
+                ));
+
+            
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<SmtpRelayService>());
             builder.Services.AddHostedService<MailServerHostedService>();
 
             // 5. Register Cookie Authentication
