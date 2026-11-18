@@ -35,19 +35,27 @@ A lightweight cross-platform mail server written in C#/.NET that provides SMTP, 
 
 ### Login
 
-![Login](docs/images/login.png)
+<a href="docs/images/login.png">
+  <img src="docs/images/login.png" width="480">
+</a>
 
 ### Domain Management
 
-![Domain Management](docs/images/domains.png)
+<a href="docs/images/domains.png">
+  <img src="docs/images/domains.png">
+</a>
 
 ### User List
 
-![User List](docs/images/users.png)
+<a href="docs/images/users.png">
+  <img src="docs/images/users.png">
+</a>
 
 ### User Management
 
-![User Management](docs/images/user.png)
+<a href="docs/images/user.png">
+  <img src="docs/images/user.png" width="640">
+</a>
 
 ## Supported Features
 
