@@ -8,12 +8,8 @@ using LumiSoft.Net.POP3.Server;
 using LumiSoft.Net.SMTP;
 using LumiSoft.Net.SMTP.Server;
 using LumiSoft.Net.TCP;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using System.Linq.Expressions;
+using lsMailServer.RestApi;
 using System.Net;
-using System.Runtime.ConstrainedExecution;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
@@ -152,7 +148,7 @@ namespace lsMailServer.Services
                     try {
                         // Check if the email exists and is domain and user is enabled
                         if (_dbService.EmailAddressExists(eArgs.RcptTo.Mailbox)) {
-                            var user = _dbService.GetUser(eArgs.Session.AuthenticatedUserIdentity!.Name);
+                            var user = await _dbService.ResolveUserAsync(eArgs.RcptTo.Mailbox);
                             if (user == null) {
                                 _logger.LogError("Error during RCPT TO validation.");
                                 eArgs.Response = new SMTP_ServerResponse(451, null, "Temporary error during recipient validation.");
@@ -1460,6 +1456,144 @@ namespace lsMailServer.Services
         #endregion
 
 
+        #region method GetSessions
+
+        /// <summary>
+        /// Retrieves a snapshot of all currently active inbound (SMTP, POP3, IMAP) and outbound (Relay) sessions.
+        /// </summary>
+        /// <returns>
+        /// A list of <see cref="SessionsController.SessionDto"/> objects representing each active session and its current state.
+        /// </returns>
+        public List<SessionsController.SessionDto> GetSessions()
+        {
+            var retValue = new List<SessionsController.SessionDto>();
+            try{
+                foreach(var session in _smtpServer!.Sessions.ToArray()) {
+                    try {
+                        retValue.Add(new SessionsController.SessionDto(
+                            session.ID,
+                            "SMTP",
+                            session.RemoteEndPoint.ToString(),
+                            session.LocalEndPoint.ToString(),
+                            session.IsSecureConnection,
+                            session.IsAuthenticated,
+                            session.AuthenticatedUserIdentity?.Name,
+                            session.StatusText,
+                            session.ConnectTime,
+                            session.LastActivity
+                        ));
+                    }
+                    catch {
+                    }
+                }
+
+                foreach(var session in _pop3Server!.Sessions.ToArray()) {
+                    try {
+                        retValue.Add(new SessionsController.SessionDto(
+                            session.ID,
+                            "POP3",
+                            session.RemoteEndPoint.ToString(),
+                            session.LocalEndPoint.ToString(),
+                            session.IsSecureConnection,
+                            session.IsAuthenticated,
+                            session.AuthenticatedUserIdentity?.Name,
+                            session.StatusText,
+                            session.ConnectTime,
+                            session.LastActivity
+                        ));
+                    }
+                    catch {
+                    }
+                }
+
+                foreach(var session in _imapServer!.Sessions.ToArray()) {
+                    try {
+                        retValue.Add(new SessionsController.SessionDto(
+                            session.ID,
+                            "IMAP",
+                            session.RemoteEndPoint.ToString(),
+                            session.LocalEndPoint.ToString(),
+                            session.IsSecureConnection,
+                            session.IsAuthenticated,
+                            session.AuthenticatedUserIdentity?.Name,
+                            session.StatusText,
+                            session.ConnectTime,
+                            session.LastActivity
+                        ));
+                    }
+                    catch {
+                    }
+                }
+
+                foreach(var session in _relayServer!.Sessions.Values.ToArray()) {
+                    try {
+                        retValue.Add(new SessionsController.SessionDto(
+                            session.Tags["ID"].ToString() ?? "",
+                            "Relay",
+                            session.IsConnected ? session.RemoteEndPoint.ToString() : "",
+                            session.IsConnected ? session.LocalEndPoint.ToString() : "",
+                            session.IsConnected ? session.IsSecureConnection : false,
+                            session.IsConnected ? session.IsAuthenticated : false,
+                            session.IsConnected ? session.AuthenticatedUserIdentity?.Name : "",
+                            session.Tags["StatusText"].ToString(),
+                            session.IsConnected ? session.ConnectTime : DateTime.UtcNow,
+                            session.IsConnected ? session.LastActivity : DateTime.UtcNow
+                        ));
+                    }
+                    catch {
+                    }
+                }
+            }
+            catch {
+            }
+
+            return retValue;
+        }
+
+        #endregion
+
+        #region method DisconnectSession
+
+        /// <summary>
+        /// Disconnects an active inbound or outbound session identified by its protocol and session ID.
+        /// </summary>
+        /// <param name="protocol">The protocol name of the session to disconnect (<c>"SMTP"</c>, <c>"POP3"</c>, <c>"IMAP"</c>, or <c>"Relay"</c>).</param>
+        /// <param name="id">The unique identifier of the session to disconnect.</param>
+        public void DisconnectSession(string protocol, string id)
+        {
+            if (protocol.Equals("SMTP",StringComparison.OrdinalIgnoreCase)) {
+                try{
+                    _smtpServer!.Sessions[id].Disconnect();
+                }
+                catch {
+                }
+            }
+            else if (protocol.Equals("POP3",StringComparison.OrdinalIgnoreCase)) {
+                try{
+                    _pop3Server!.Sessions[id].Disconnect();
+                }
+                catch {
+                }
+            }
+            else if (protocol.Equals("IMAP",StringComparison.OrdinalIgnoreCase)) {
+                try{
+                    _imapServer!.Sessions[id].Disconnect();
+                }
+                catch {
+                }
+            }
+            else if (protocol.Equals("Relay",StringComparison.OrdinalIgnoreCase)) {
+                try{
+                    _relayServer!.Sessions[id].Disconnect();
+                }
+                catch {
+                }
+            }
+        }
+
+        #endregion
+
+
         #region method LoadOrCreateCert
 
         /// <summary>
@@ -1471,7 +1605,7 @@ namespace lsMailServer.Services
         /// <returns>An initialized <see cref="X509Certificate2"/> instance configured with persistent key storage and exportable keys.</returns>
         private X509Certificate2 LoadOrCreateCert(string password, string hostName)
         {
-            string cerFile = Path.Combine(AppContext.BaseDirectory, "Data" , "Certificates", $"hostName.pfx");
+            string cerFile = Path.Combine(AppContext.BaseDirectory, "Data" , "Certificates", $"{hostName}.pfx");
             if (!File.Exists(cerFile)) {
                 var cert = CreateSelfSignedCert(password,hostName);
                 File.WriteAllBytes(cerFile,cert.Export(X509ContentType.Pfx,password));

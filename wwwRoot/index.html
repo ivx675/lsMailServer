@@ -33,12 +33,20 @@
     </header>
 
     <!-- Main Navigation Tabs -->
-    <nav class="bg-slate-800/60 border-b border-slate-700 px-6 flex space-x-4">
-        <button onclick="switchTab('domains')" id="tab-domains" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2">
+    <nav class="bg-slate-800/60 border-b border-slate-700 px-6 flex space-x-4 overflow-x-auto">
+        <button onclick="switchTab('domains')" id="tab-domains" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2 whitespace-nowrap">
             <i class="fa-solid fa-globe"></i><span>Domains</span>
         </button>
-        <button onclick="switchTab('users')" id="tab-users" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2">
+        <button onclick="switchTab('users')" id="tab-users" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
             <i class="fa-solid fa-users"></i><span>Users & Mailboxes</span>
+        </button>
+        <button onclick="switchTab('queue')" id="tab-queue" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-envelope-open-text"></i><span>Relay Queue</span>
+            <span id="queueCountBadge" class="hidden ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">0</span>
+        </button>
+        <button onclick="switchTab('sessions')" id="tab-sessions" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-plug"></i><span>Active Sessions</span>
+            <span id="sessionsCountBadge" class="hidden ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">0</span>
         </button>
     </nav>
 
@@ -74,10 +82,10 @@
 
             <!-- Domains Table Card -->
             <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-290px)]">
                     <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                        <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
                                 <th class="py-3 px-6">Domain Name</th>
                                 <th class="py-3 px-6">Description</th>
                                 <th class="py-3 px-6 text-center">Active</th>
@@ -134,10 +142,10 @@
 
             <!-- Users Table Card -->
             <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
-                <div class="overflow-x-auto">
+                <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-290px)]">
                     <table class="w-full text-left border-collapse">
-                        <thead>
-                            <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                        <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
                                 <th class="py-3 px-6">User Name</th>
                                 <th class="py-3 px-6">Email Aliases</th>
                                 <th class="py-3 px-6">Description</th>
@@ -162,7 +170,215 @@
             </div>
         </section>
 
+        <!-- ================= RELAY QUEUE TAB ================= -->
+        <section id="section-queue" class="hidden space-y-6">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <!-- Search & Filters -->
+                <div class="flex flex-wrap items-center gap-3 flex-1">
+                    <div class="relative flex-1 min-w-[220px]">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="queueSearch" oninput="filterQueueLocally()" placeholder="Search sender, recipient, domain, ID, or error..."
+                               class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <button onclick="loadRelayQueue()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2">
+                        <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                    </button>
+                </div>
+                <!-- Queue Summary Info -->
+                <div class="flex items-center space-x-3 text-xs text-slate-400 whitespace-nowrap">
+                    <span id="queueSummaryText">0 messages queued</span>
+                </div>
+            </div>
+
+            <!-- Relay Queue Table Card -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-290px)]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3 px-6">Sender &rarr; Recipient</th>
+                                <th class="py-3 px-6">Attempts</th>
+                                <th class="py-3 px-6">Next Retry</th>
+                                <th class="py-3 px-6">Age / Size</th>
+                                <th class="py-3 px-6">Last Error</th>
+                                <th class="py-3 px-6 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="queueTableBody" class="divide-y divide-slate-700 text-sm">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Empty State -->
+                <div id="queueEmptyState" class="hidden p-12 text-center text-slate-400">
+                    <i class="fa-solid fa-circle-check text-4xl mb-3 text-emerald-500/60"></i>
+                    <p class="text-base font-medium">Relay queue is empty</p>
+                    <p class="text-xs text-slate-500 mt-1">All outbound messages have been delivered or no deferred messages are waiting.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= ACTIVE SESSIONS TAB ================= -->
+        <section id="section-sessions" class="hidden space-y-6">
+            <!-- KPI Strip -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
+                    <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Active Sessions</div>
+                    <div id="kpiSessionsTotal" class="text-2xl font-bold font-mono text-slate-100 mt-1">0</div>
+                    <div id="kpiSessionsProtoBreakdown" class="text-xs text-slate-400 mt-1 truncate">IMAP: 0 &bull; POP3: 0 &bull; SMTP: 0</div>
+                </div>
+                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
+                    <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Executing Command</div>
+                    <div id="kpiSessionsExecuting" class="text-2xl font-bold font-mono text-emerald-400 mt-1">0</div>
+                    <div id="kpiSessionsWaiting" class="text-xs text-slate-400 mt-1">Waiting: 0</div>
+                </div>
+                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
+                    <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Authenticated</div>
+                    <div id="kpiSessionsAuth" class="text-2xl font-bold font-mono text-blue-400 mt-1">0</div>
+                    <div id="kpiSessionsUnauth" class="text-xs text-slate-400 mt-1">Unauthenticated: 0</div>
+                </div>
+                <div class="bg-slate-800 border border-slate-700 rounded-xl p-4 shadow-sm">
+                    <div class="text-[11px] uppercase tracking-wider font-semibold text-slate-400">TLS Encrypted</div>
+                    <div id="kpiSessionsTlsPct" class="text-2xl font-bold font-mono text-slate-100 mt-1">0%</div>
+                    <div id="kpiSessionsTlsSub" class="text-xs text-slate-400 mt-1">0 of 0 secure</div>
+                </div>
+            </div>
+
+            <!-- Toolbar -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <!-- Protocol Filter Pills -->
+                <div class="flex flex-wrap items-center gap-1.5" id="sessionProtocolPills">
+                    <button type="button" onclick="setSessionProtocolFilter('ALL')" data-proto="ALL" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-blue-600 text-white">All</button>
+                    <button type="button" onclick="setSessionProtocolFilter('IMAP')" data-proto="IMAP" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700">IMAP</button>
+                    <button type="button" onclick="setSessionProtocolFilter('POP3')" data-proto="POP3" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700">POP3</button>
+                    <button type="button" onclick="setSessionProtocolFilter('SMTP')" data-proto="SMTP" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700">SMTP</button>
+                    <button type="button" onclick="setSessionProtocolFilter('RELAY')" data-proto="RELAY" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700">Relay</button>
+                </div>
+
+                <!-- Search, State & Auto-Refresh -->
+                <div class="flex flex-wrap items-center gap-3 flex-1 lg:justify-end">
+                    <div class="relative flex-1 min-w-[200px] lg:max-w-xs">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="sessionSearch" oninput="filterSessionsLocally()" placeholder="Search user, IP, status, ID..."
+                               class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <select id="sessionStateFilter" onchange="filterSessionsLocally()" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="ALL">All States</option>
+                        <option value="EXEC">Executing Command</option>
+                        <option value="WAIT">Waiting</option>
+                        <option value="AUTH">Authenticated</option>
+                        <option value="UNAUTH">Unauthenticated</option>
+                    </select>
+                    <select id="sessionsAutoRefresh" onchange="resetSessionsTimer()" title="Auto-refresh interval" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="5000" selected>Auto: 5s</option>
+                        <option value="10000">Auto: 10s</option>
+                        <option value="30000">Auto: 30s</option>
+                        <option value="0">Auto: Off</option>
+                    </select>
+                    <button onclick="loadSessions()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2">
+                        <i class="fa-solid fa-rotate"></i><span>Refresh</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Sessions Table Card -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-390px)]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3 px-6">Protocol</th>
+                                <th class="py-3 px-6">Client Endpoint</th>
+                                <th class="py-3 px-6">User / Identity</th>
+                                <th class="py-3 px-6">Status</th>
+                                <th class="py-3 px-6">Transport</th>
+                                <th class="py-3 px-6">Connected</th>
+                                <th class="py-3 px-6">Last Activity</th>
+                                <th class="py-3 px-6 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sessionsTableBody" class="divide-y divide-slate-700 text-sm">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Empty State -->
+                <div id="sessionsEmptyState" class="hidden p-12 text-center text-slate-400">
+                    <i class="fa-solid fa-plug-circle-xmark text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-base font-medium">No active sessions</p>
+                    <p class="text-xs text-slate-500 mt-1">No clients are currently connected matching your filter.</p>
+                </div>
+            </div>
+        </section>
+
     </main>
+
+    <!-- ================= QUEUE ITEM DETAILS MODAL ================= -->
+    <div id="queueDetailsModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-base flex items-center space-x-2">
+                    <i class="fa-solid fa-envelope-open-text text-blue-500"></i><span>Queued Message Details</span>
+                </h3>
+                <button onclick="closeQueueDetailsModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-4 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-900/60 p-4 rounded-xl border border-slate-700/70">
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Queue ID</span>
+                        <span id="detailQueueId" class="font-mono text-slate-200 break-all"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Message Size</span>
+                        <span id="detailQueueSize" class="text-slate-200"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Envelope Sender</span>
+                        <span id="detailQueueSender" class="font-mono text-slate-200 break-all"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Recipient</span>
+                        <span id="detailQueueRecipient" class="font-mono text-slate-200 break-all"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">First Attempt (UTC / Local)</span>
+                        <span id="detailQueueFirstAttempt" class="text-slate-200"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Next Retry</span>
+                        <span id="detailQueueNextRetry" class="text-slate-200"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Attempt Count</span>
+                        <span id="detailQueueAttempts" class="text-slate-200"></span>
+                    </div>
+                    <div>
+                        <span class="block uppercase text-[10px] font-semibold text-slate-500">Delay DSN Sent</span>
+                        <span id="detailQueueDelaySent" class="text-slate-200"></span>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">Last Diagnostic Error</label>
+                    <pre id="detailQueueError" class="w-full p-3 bg-slate-950 border border-slate-700 rounded-lg text-xs font-mono text-rose-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto"></pre>
+                </div>
+
+                <div class="flex items-center justify-between pt-3 border-t border-slate-700">
+                    <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
+                    <button type="button" onclick="openDeleteConfirmModal('queue-item')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
+                        <i class="fa-solid fa-trash-can"></i><span>Delete Message</span>
+                    </button>
+                    -->
+                    <div></div>
+                    <button type="button" onclick="closeQueueDetailsModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ================= LOGIN MODAL ================= -->
     <div id="loginModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
@@ -449,13 +665,22 @@
         const AUTH_API = '/api/auth';
         const DOMAINS_API = '/api/domains';
         const USERS_API = '/api/users';
+        const RELAY_QUEUE_API = '/api/relay-queue';
+        const SESSIONS_API = '/api/sessions';
         const BYTES_PER_MB = 1024 * 1024;
         const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
         let domainsCache = [];
         let usersCache = [];
-        let deleteContext = null; // 'domain', 'user', or 'user-email'
+        let queueCache = [];
+        let sessionsCache = [];
+        let sessionProtocolFilter = 'ALL';
+        let sessionsRefreshTimer = null;
+        let currentInspectingQueueItem = null;
+        let deleteContext = null; // 'domain', 'user', 'user-email', 'queue-item', or 'session'
         let pendingDeleteEmail = null;
+        let pendingDeleteQueueId = null;
+        let pendingDisconnectSession = null; // { protocol, id }
         let currentTab = 'domains';
 
         // Authenticated Fetch Wrapper (Automatically detects 401 session expiry)
@@ -465,6 +690,7 @@
                 ...options
             });
             if (res.status === 401) {
+                clearInterval(sessionsRefreshTimer);
                 document.getElementById('loginModal').classList.remove('hidden');
                 throw new Error('Authentication required. Please sign in.');
             }
@@ -537,6 +763,11 @@
                 showToast('Successfully logged in!');
                 if (currentTab === 'users') {
                     loadUsers();
+                } else if (currentTab === 'queue') {
+                    loadRelayQueue();
+                } else if (currentTab === 'sessions') {
+                    loadSessions();
+                    resetSessionsTimer();
                 } else {
                     loadDomains();
                 }
@@ -553,6 +784,7 @@
 
         // Handle Logout
         async function handleLogout() {
+            clearInterval(sessionsRefreshTimer);
             try {
                 await fetch(`${AUTH_API}/logout`, {
                     method: 'POST',
@@ -563,6 +795,10 @@
             }
             domainsCache = [];
             usersCache = [];
+            queueCache = [];
+            sessionsCache = [];
+            updateQueueBadge(0);
+            updateSessionsBadge(0);
             document.getElementById('authUsernameDisplay').textContent = '';
             document.getElementById('loginModal').classList.remove('hidden');
             showToast('Logged out successfully.');
@@ -573,17 +809,26 @@
             currentTab = tab;
             document.getElementById('section-domains').classList.toggle('hidden', tab !== 'domains');
             document.getElementById('section-users').classList.toggle('hidden', tab !== 'users');
+            document.getElementById('section-queue').classList.toggle('hidden', tab !== 'queue');
+            document.getElementById('section-sessions').classList.toggle('hidden', tab !== 'sessions');
 
-            document.getElementById('tab-domains').className = tab === 'domains'
-                ? 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2'
-                : 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2';
+            const activeClass = 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2 whitespace-nowrap';
+            const inactiveClass = 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap';
 
-            document.getElementById('tab-users').className = tab === 'users'
-                ? 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2'
-                : 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2';
+            document.getElementById('tab-domains').className = tab === 'domains' ? activeClass : inactiveClass;
+            document.getElementById('tab-users').className = tab === 'users' ? activeClass : inactiveClass;
+            document.getElementById('tab-queue').className = tab === 'queue' ? activeClass : inactiveClass;
+            document.getElementById('tab-sessions').className = tab === 'sessions' ? activeClass : inactiveClass;
 
-            if (tab === 'domains') loadDomains();
-            if (tab === 'users') loadUsers();
+            if (tab === 'sessions') {
+                loadSessions();
+                resetSessionsTimer();
+            } else {
+                clearInterval(sessionsRefreshTimer);
+                if (tab === 'domains') loadDomains();
+                if (tab === 'users') loadUsers();
+                if (tab === 'queue') loadRelayQueue();
+            }
         }
 
         // Toast Notification Helper
@@ -625,7 +870,6 @@
             const randomValues = new Uint32Array(length);
             window.crypto.getRandomValues(randomValues);
 
-            // Guarantee at least one character from each category
             const chars = [
                 upper[randomValues[0] % upper.length],
                 lower[randomValues[1] % lower.length],
@@ -637,7 +881,6 @@
                 chars.push(all[randomValues[i] % all.length]);
             }
 
-            // Fisher-Yates shuffle
             const shuffleValues = new Uint32Array(chars.length);
             window.crypto.getRandomValues(shuffleValues);
             for (let i = chars.length - 1; i > 0; i--) {
@@ -648,7 +891,6 @@
             const input = document.getElementById(inputId);
             const icon = document.getElementById(iconId);
             input.value = chars.join('');
-            // Automatically reveal the generated password so admin can copy/read it
             input.type = 'text';
             icon.className = 'fa-solid fa-eye-slash text-xs text-blue-400';
         }
@@ -696,7 +938,7 @@
                     ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full"></span>Enabled</span>'
                     : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
 
-                const escapedNameForJs = d.name.replace(/'/g, "\'");
+                const escapedNameForJs = d.name.replace(/'/g, "\\'");
 
                 tr.innerHTML = `
                         <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
@@ -862,7 +1104,6 @@
                     } else {
                         const thresholdDays = parseInt(inactivityFilter, 10);
                         const days = getDaysSince(u.lastLoginDate);
-                        // Include accounts that have never logged in OR haven't logged in within thresholdDays
                         if (days !== null && days < thresholdDays) return false;
                     }
                 }
@@ -976,10 +1217,8 @@
                 closeCreateUserModal();
                 showToast(`User "${payload.userName}" created successfully!`);
 
-                // Refresh the users cache from the server
                 await loadUsers();
 
-                // Automatically transition into the edit modal for this new user
                 const createdUser = (responseData && responseData.userId)
                     ? usersCache.find(u => u.userId === responseData.userId)
                     : usersCache.find(u => u.userName.toLowerCase() === payload.userName.toLowerCase());
@@ -1036,7 +1275,7 @@
             emails.forEach(email => {
                 const li = document.createElement('li');
                 li.className = 'px-3 py-2 flex items-center justify-between text-xs hover:bg-slate-800/60 transition-colors';
-                const escapedEmailJs = email.replace(/'/g, "\'");
+                const escapedEmailJs = email.replace(/'/g, "\\'");
                 li.innerHTML = `
                         <span class="font-mono text-slate-200 flex items-center space-x-2">
                             <i class="fa-solid fa-envelope text-blue-400"></i>
@@ -1114,11 +1353,378 @@
         }
 
         // ==========================================
+        // RELAY QUEUE LOGIC
+        // ==========================================
+        async function loadRelayQueue() {
+            try {
+                const res = await apiFetch(RELAY_QUEUE_API);
+                if (!res.ok) throw new Error('Failed to fetch relay queue');
+                queueCache = await res.json();
+                updateQueueBadge(queueCache.length);
+                filterQueueLocally();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to load relay queue from server.', true);
+            }
+        }
+
+        function updateQueueBadge(count) {
+            const badge = document.getElementById('queueCountBadge');
+            if (!badge) return;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === null || bytes === undefined || isNaN(bytes)) return '—';
+            if (bytes < 1024) return `${bytes} B`;
+            if (bytes < BYTES_PER_MB) return `${(bytes / 1024).toFixed(1)} KB`;
+            return `${(bytes / BYTES_PER_MB).toFixed(2)} MB`;
+        }
+
+        function formatRelativeDuration(ms) {
+            const absSec = Math.floor(Math.abs(ms) / 1000);
+            if (absSec < 60) return `${absSec}s`;
+            const mins = Math.floor(absSec / 60);
+            if (mins < 60) return `${mins}m`;
+            const hrs = Math.floor(mins / 60);
+            const remMins = mins % 60;
+            if (hrs < 24) return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
+            const days = Math.floor(hrs / 24);
+            const remHrs = hrs % 24;
+            return remHrs > 0 ? `${days}d ${remHrs}h` : `${days}d`;
+        }
+
+        function formatNextRetryHtml(nextRetryTime) {
+            if (!nextRetryTime) return '<span class="text-xs text-slate-500">—</span>';
+            const parsed = new Date(nextRetryTime);
+            if (isNaN(parsed.getTime())) return '<span class="text-xs text-slate-500">Unknown</span>';
+
+            const diffMs = parsed.getTime() - Date.now();
+            const timeStr = parsed.toLocaleTimeString(navigator.languages, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            if (diffMs <= 0) {
+                return `
+                        <div class="text-xs text-emerald-400 font-medium">Due now</div>
+                        <div class="text-[11px] text-slate-500">${timeStr}</div>
+                    `;
+            }
+            return `
+                    <div class="text-xs text-slate-200 font-medium">in ${formatRelativeDuration(diffMs)}</div>
+                    <div class="text-[11px] text-slate-500">${timeStr}</div>
+                `;
+        }
+
+        function filterQueueLocally() {
+            const query = document.getElementById('queueSearch').value.trim().toLowerCase();
+
+            const filtered = queueCache.filter(item => {
+                if (!query) return true;
+                return (item.id || '').toLowerCase().includes(query)
+                    || (item.envelopeSender || '').toLowerCase().includes(query)
+                    || (item.recipientAddress || '').toLowerCase().includes(query)
+                    || (item.recipientDomain || '').toLowerCase().includes(query)
+                    || (item.lastError || '').toLowerCase().includes(query);
+            });
+
+            document.getElementById('queueSummaryText').textContent =
+                filtered.length === queueCache.length
+                    ? `${queueCache.length} message${queueCache.length === 1 ? '' : 's'} queued`
+                    : `Showing ${filtered.length} of ${queueCache.length} queued`;
+
+            renderQueueTable(filtered);
+        }
+
+        function renderQueueTable(items) {
+            const tbody = document.getElementById('queueTableBody');
+            const emptyState = document.getElementById('queueEmptyState');
+            tbody.innerHTML = '';
+
+            if (!items || items.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            items.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/30 transition-colors border-b border-slate-700/50';
+
+                const senderDisplay = item.envelopeSender
+                    ? `<span class="font-mono text-xs text-slate-300">${escapeHtml(item.envelopeSender)}</span>`
+                    : `<span class="font-mono text-xs text-slate-500 italic">&lt;&gt; (DSN Bounce)</span>`;
+
+                const delayBadge = item.delayedNoticeSent
+                    ? `<span class="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">Delay DSN Sent</span>`
+                    : '';
+
+                const firstAttemptParsed = item.firstAttemptTime ? new Date(item.firstAttemptTime) : null;
+                const ageStr = (firstAttemptParsed && !isNaN(firstAttemptParsed.getTime()))
+                    ? formatRelativeDuration(Date.now() - firstAttemptParsed.getTime())
+                    : '—';
+
+                const errorText = item.lastError
+                    ? `<div class="max-w-xs truncate font-mono text-xs text-rose-300" title="${escapeHtml(item.lastError)}">${escapeHtml(item.lastError)}</div>`
+                    : `<span class="text-xs text-slate-500 italic">No error recorded</span>`;
+
+                const escapedIdJs = (item.id || '').replace(/'/g, "\\'");
+
+                tr.innerHTML = `
+                        <td class="py-3.5 px-6">
+                            <div class="flex flex-col space-y-0.5">
+                                <div>${senderDisplay}</div>
+                                <div class="flex items-center space-x-1.5 text-slate-100 font-mono text-xs">
+                                    <i class="fa-solid fa-arrow-right text-blue-400 text-[10px]"></i>
+                                    <span>${escapeHtml(item.recipientAddress)}</span>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">
+                            <div class="text-xs font-semibold text-slate-200">${item.attemptCount}</div>
+                            ${delayBadge}
+                        </td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">${formatNextRetryHtml(item.nextRetryTime)}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">
+                            <div class="text-xs text-slate-200">${ageStr}</div>
+                            <div class="text-[11px] text-slate-500 font-mono">${formatBytes(item.messageSizeBytes)}</div>
+                        </td>
+                        <td class="py-3.5 px-6">${errorText}</td>
+                        <td class="py-3.5 px-6 text-right whitespace-nowrap space-x-1.5">
+                            <button onclick="openQueueDetailsModal('${escapedIdJs}')"
+                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                <i class="fa-solid fa-eye mr-1"></i> Inspect
+                            </button>
+                            <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
+                            <button onclick="openDeleteConfirmModal('queue-item', '${escapedIdJs}')" title="Delete Queued Message"
+                                class="px-2.5 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                            -->
+                        </td>
+                    `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function openQueueDetailsModal(id) {
+            const item = queueCache.find(q => q.id === id);
+            if (!item) return;
+
+            currentInspectingQueueItem = item;
+            document.getElementById('detailQueueId').textContent = item.id;
+            document.getElementById('detailQueueSize').textContent = formatBytes(item.messageSizeBytes);
+            document.getElementById('detailQueueSender').textContent = item.envelopeSender || '<> (Null Sender / Bounce)';
+            document.getElementById('detailQueueRecipient').textContent = item.recipientAddress;
+
+            const firstAttempt = item.firstAttemptTime ? new Date(item.firstAttemptTime).toLocaleString(navigator.languages) : '—';
+            const nextRetry = item.nextRetryTime ? new Date(item.nextRetryTime).toLocaleString(navigator.languages) : '—';
+            document.getElementById('detailQueueFirstAttempt').textContent = firstAttempt;
+            document.getElementById('detailQueueNextRetry').textContent = nextRetry;
+            document.getElementById('detailQueueAttempts').textContent = String(item.attemptCount);
+            document.getElementById('detailQueueDelaySent').textContent = item.delayedNoticeSent ? 'Yes' : 'No';
+            document.getElementById('detailQueueError').textContent = item.lastError || 'No error recorded.';
+
+            document.getElementById('queueDetailsModal').classList.remove('hidden');
+        }
+
+        function closeQueueDetailsModal() {
+            currentInspectingQueueItem = null;
+            document.getElementById('queueDetailsModal').classList.add('hidden');
+        }
+
+        // ==========================================
+        // ACTIVE SESSIONS LOGIC
+        // ==========================================
+        async function loadSessions() {
+            try {
+                const res = await apiFetch(SESSIONS_API);
+                if (!res.ok) throw new Error('Failed to fetch active sessions');
+                sessionsCache = await res.json();
+                updateSessionsBadge(sessionsCache.length);
+                updateSessionsKpis(sessionsCache);
+                filterSessionsLocally();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to load active sessions.', true);
+            }
+        }
+
+        function updateSessionsBadge(count) {
+            const badge = document.getElementById('sessionsCountBadge');
+            if (!badge) return;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function updateSessionsKpis(list) {
+            const total = list.length;
+            const imapCount = list.filter(s => (s.protocol || '').toUpperCase() === 'IMAP').length;
+            const pop3Count = list.filter(s => (s.protocol || '').toUpperCase() === 'POP3').length;
+            const smtpCount = list.filter(s => (s.protocol || '').toUpperCase() === 'SMTP').length;
+            const relayCount = list.filter(s => (s.protocol || '').toUpperCase() === 'RELAY').length;
+            const execCount = list.filter(s => (s.status || '').startsWith('Executing')).length;
+            const authCount = list.filter(s => s.isAuthenticated).length;
+            const tlsCount = list.filter(s => s.isSecure).length;
+
+            document.getElementById('kpiSessionsTotal').textContent = total;
+            document.getElementById('kpiSessionsProtoBreakdown').textContent =
+                `IMAP: ${imapCount} • POP3: ${pop3Count} • SMTP: ${smtpCount}` + (relayCount ? ` • Relay: ${relayCount}` : '');
+            document.getElementById('kpiSessionsExecuting').textContent = execCount;
+            document.getElementById('kpiSessionsWaiting').textContent = `Waiting: ${total - execCount}`;
+            document.getElementById('kpiSessionsAuth').textContent = authCount;
+            document.getElementById('kpiSessionsUnauth').textContent = `Unauthenticated: ${total - authCount}`;
+            document.getElementById('kpiSessionsTlsPct').textContent = total ? `${Math.round((tlsCount / total) * 100)}%` : '0%';
+            document.getElementById('kpiSessionsTlsSub').textContent = `${tlsCount} of ${total} secure`;
+        }
+
+        function setSessionProtocolFilter(proto) {
+            sessionProtocolFilter = proto;
+            document.querySelectorAll('#sessionProtocolPills button').forEach(btn => {
+                const isActive = btn.dataset.proto === proto;
+                btn.className = isActive
+                    ? 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-blue-600 text-white'
+                    : 'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-slate-900 text-slate-300 hover:bg-slate-700 border border-slate-700';
+            });
+            filterSessionsLocally();
+        }
+
+        function filterSessionsLocally() {
+            const query = document.getElementById('sessionSearch').value.trim().toLowerCase();
+            const stateFilter = document.getElementById('sessionStateFilter').value;
+
+            const filtered = sessionsCache.filter(s => {
+                if (sessionProtocolFilter !== 'ALL' && (s.protocol || '').toUpperCase() !== sessionProtocolFilter) {
+                    return false;
+                }
+
+                const isExec = (s.status || '').startsWith('Executing');
+                if (stateFilter === 'EXEC' && !isExec) return false;
+                if (stateFilter === 'WAIT' && isExec) return false;
+                if (stateFilter === 'AUTH' && !s.isAuthenticated) return false;
+                if (stateFilter === 'UNAUTH' && s.isAuthenticated) return false;
+
+                if (!query) return true;
+                return (s.id || '').toLowerCase().includes(query)
+                    || (s.protocol || '').toLowerCase().includes(query)
+                    || (s.remoteEndPoint || '').toLowerCase().includes(query)
+                    || (s.localEndPoint || '').toLowerCase().includes(query)
+                    || (s.userName || '').toLowerCase().includes(query)
+                    || (s.status || '').toLowerCase().includes(query);
+            });
+
+            renderSessionsTable(filtered);
+        }
+
+        function getProtocolBadgeHtml(protocol) {
+            const p = (protocol || '').toUpperCase();
+            if (p === 'IMAP') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">IMAP</span>`;
+            }
+            if (p === 'SMTP') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/30">SMTP</span>`;
+            }
+            if (p === 'POP3') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">POP3</span>`;
+            }
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-teal-500/15 text-teal-400 border border-teal-500/30">${escapeHtml(p || 'RELAY')}</span>`;
+        }
+
+        function renderSessionsTable(sessions) {
+            const tbody = document.getElementById('sessionsTableBody');
+            const emptyState = document.getElementById('sessionsEmptyState');
+            tbody.innerHTML = '';
+
+            if (!sessions || sessions.length === 0) {
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            sessions.forEach(s => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-slate-900/30 transition-colors border-b border-slate-700/50';
+
+                const isExec = (s.status || '').startsWith('Executing');
+                const statusBadge = isExec
+                    ? `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full animate-pulse"></span>${escapeHtml(s.status)}</span>`
+                    : `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-700/70 text-slate-300 border border-slate-600/50">${escapeHtml(s.status || 'Waiting')}</span>`;
+
+                const userHtml = (s.isAuthenticated && s.userName)
+                    ? `<span class="font-medium text-slate-100">${escapeHtml(s.userName)}</span>`
+                    : `<span class="text-xs text-slate-500 italic">Unauthenticated</span>`;
+
+                const localPort = (s.localEndPoint || '').split(':').pop();
+                const transportHtml = s.isSecure
+                    ? `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-lock mr-1 text-[10px]"></i>TLS</span> <span class="font-mono text-xs text-slate-400">:${escapeHtml(localPort)}</span>`
+                    : `<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"><i class="fa-solid fa-lock-open mr-1 text-[10px]"></i>Plain</span> <span class="font-mono text-xs text-slate-400">:${escapeHtml(localPort)}</span>`;
+
+                const connectParsed = s.connectTime ? new Date(s.connectTime) : null;
+                const connectDuration = (connectParsed && !isNaN(connectParsed.getTime()))
+                    ? formatRelativeDuration(Date.now() - connectParsed.getTime())
+                    : '—';
+                const connectTooltip = connectParsed ? connectParsed.toLocaleString(navigator.languages) : '';
+
+                const activityParsed = s.lastActivity ? new Date(s.lastActivity) : null;
+                const activityMs = (activityParsed && !isNaN(activityParsed.getTime()))
+                    ? Math.max(0, Date.now() - activityParsed.getTime())
+                    : null;
+                const activityText = activityMs === null
+                    ? '—'
+                    : (activityMs < 3000 ? '<span class="text-emerald-400 font-medium">Active now</span>' : `${formatRelativeDuration(activityMs)} ago`);
+                const activityTooltip = activityParsed ? activityParsed.toLocaleString(navigator.languages) : '';
+
+                const escapedProtoJs = (s.protocol || '').replace(/'/g, "\\'");
+                const escapedIdJs = (s.id || '').replace(/'/g, "\\'");
+
+                tr.innerHTML = `
+                        <td class="py-3.5 px-6 whitespace-nowrap">${getProtocolBadgeHtml(s.protocol)}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">
+                            <div class="font-mono text-xs text-slate-100">${escapeHtml(s.remoteEndPoint)}</div>
+                            <div class="font-mono text-[11px] text-slate-500">${escapeHtml(s.id)}</div>
+                        </td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">${userHtml}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">${statusBadge}</td>
+                        <td class="py-3.5 px-6 whitespace-nowrap">${transportHtml}</td>
+                        <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(connectTooltip)}">${connectDuration}</td>
+                        <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(activityTooltip)}">${activityText}</td>
+                        <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                            <button onclick="openDeleteConfirmModal('session', '${escapedProtoJs}|${escapedIdJs}')" title="Disconnect Session"
+                                class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
+                                <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Disconnect
+                            </button>
+                        </td>
+                    `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function resetSessionsTimer() {
+            clearInterval(sessionsRefreshTimer);
+            const intervalMs = parseInt(document.getElementById('sessionsAutoRefresh').value, 10);
+            if (intervalMs > 0 && currentTab === 'sessions') {
+                sessionsRefreshTimer = setInterval(loadSessions, intervalMs);
+            }
+        }
+
+        // ==========================================
         // SHARED DELETE CONFIRMATION MODAL
         // ==========================================
         function openDeleteConfirmModal(context, targetValue = null) {
             deleteContext = context;
             pendingDeleteEmail = targetValue;
+            pendingDeleteQueueId = targetValue || (currentInspectingQueueItem ? currentInspectingQueueItem.id : null);
+            pendingDisconnectSession = null;
+
+            const confirmBtn = document.querySelector('#deleteConfirmModal button[onclick="executeDeleteTarget()"]');
+            confirmBtn.textContent = 'Yes, Delete';
 
             if (context === 'domain' && currentEditingDomain) {
                 document.getElementById('deleteConfirmTitle').textContent = 'Delete Domain?';
@@ -1132,12 +1738,27 @@
                 document.getElementById('deleteConfirmTitle').textContent = 'Remove Email Address?';
                 document.getElementById('deleteConfirmText').innerHTML = `Are you sure you want to remove <strong class="text-slate-200 font-mono">${escapeHtml(pendingDeleteEmail)}</strong> from user <strong class="text-slate-200">${escapeHtml(currentEditingUser.userName)}</strong>?`;
                 document.getElementById('deleteConfirmModal').classList.remove('hidden');
+            } else if (context === 'queue-item' && pendingDeleteQueueId) {
+                document.getElementById('deleteConfirmTitle').textContent = 'Delete Queued Message?';
+                document.getElementById('deleteConfirmText').innerHTML = `Are you sure you want to permanently remove message <strong class="text-slate-200 font-mono">${escapeHtml(pendingDeleteQueueId)}</strong> from the relay queue without sending a bounce?`;
+                document.getElementById('deleteConfirmModal').classList.remove('hidden');
+            } else if (context === 'session' && targetValue) {
+                const sepIdx = targetValue.indexOf('|');
+                const protocol = targetValue.slice(0, sepIdx);
+                const id = targetValue.slice(sepIdx + 1);
+                pendingDisconnectSession = { protocol, id };
+                confirmBtn.textContent = 'Yes, Disconnect';
+                document.getElementById('deleteConfirmTitle').textContent = 'Disconnect Session?';
+                document.getElementById('deleteConfirmText').innerHTML = `Forcefully terminate <strong class="text-slate-200">${escapeHtml(protocol)}</strong> session <strong class="text-slate-200 font-mono">${escapeHtml(id)}</strong>?`;
+                document.getElementById('deleteConfirmModal').classList.remove('hidden');
             }
         }
 
         function closeDeleteConfirmModal() {
             deleteContext = null;
             pendingDeleteEmail = null;
+            pendingDeleteQueueId = null;
+            pendingDisconnectSession = null;
             document.getElementById('deleteConfirmModal').classList.add('hidden');
         }
 
@@ -1183,6 +1804,32 @@
                     renderUserAliasesList(currentEditingUser.emailAddresses);
                     showToast(`Removed "${targetEmail}".`);
                     loadUsers();
+                } catch (err) {
+                    showToast(err.message, true);
+                }
+            } else if (deleteContext === 'queue-item' && pendingDeleteQueueId) {
+                const targetId = pendingDeleteQueueId;
+                try {
+                    const res = await apiFetch(`${RELAY_QUEUE_API}/${encodeURIComponent(targetId)}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete queued message');
+                    closeDeleteConfirmModal();
+                    closeQueueDetailsModal();
+                    showToast(`Queued message "${targetId}" deleted.`);
+                    loadRelayQueue();
+                } catch (err) {
+                    showToast(err.message, true);
+                }
+            } else if (deleteContext === 'session' && pendingDisconnectSession) {
+                const { protocol, id } = pendingDisconnectSession;
+                try {
+                    const res = await apiFetch(`${SESSIONS_API}/${encodeURIComponent(protocol)}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to disconnect session');
+                    closeDeleteConfirmModal();
+                    sessionsCache = sessionsCache.filter(s => !(s.id === id && (s.protocol || '').toUpperCase() === protocol.toUpperCase()));
+                    updateSessionsBadge(sessionsCache.length);
+                    updateSessionsKpis(sessionsCache);
+                    filterSessionsLocally();
+                    showToast(`Disconnected ${protocol} session "${id}".`);
                 } catch (err) {
                     showToast(err.message, true);
                 }

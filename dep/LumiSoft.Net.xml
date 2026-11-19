@@ -58984,6 +58984,12 @@
             </summary>
             <remarks>This timeout applies only synchronous TCP read/write operations.</remarks>
         </member>
+        <member name="P:LumiSoft.Net.TCP.TCP_Client.Tags">
+            <summary>
+            Gets user data items collection.
+            </summary>
+            <exception cref="T:System.ObjectDisposedException">Is raised when this object is disposed and this property is accessed.</exception>
+        </member>
         <member name="M:LumiSoft.Net.TCP.TCP_Client.OnConnected">
             <summary>
             This method is called after TCP client has sucessfully connected.
@@ -59364,6 +59370,12 @@
             This method is called from TCP server when session should start processing incoming connection.
             </summary>
         </member>
+        <member name="M:LumiSoft.Net.TCP.TCP_ServerSession.SetStatusText(System.String)">
+            <summary>
+            Sets human-readable description of the session's current activity.
+            </summary>
+            <param name="statusText">Status text.</param>
+        </member>
         <member name="M:LumiSoft.Net.TCP.TCP_ServerSession.SwitchToSecureAsync">
             <summary>
             Upgrades the current plaintext TCP connection to a secure TLS connection
@@ -59454,6 +59466,11 @@
             Gets owner TCP server.
             </summary>
             <exception cref="T:System.ObjectDisposedException">Is raised when this object is disposed and this property is accessed.</exception>
+        </member>
+        <member name="P:LumiSoft.Net.TCP.TCP_ServerSession.StatusText">
+            <summary>
+            Gets human-readable description of the session's current activity.
+            </summary>
         </member>
         <member name="P:LumiSoft.Net.TCP.TCP_ServerSession.LocalHostName">
             <summary>

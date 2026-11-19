@@ -15,10 +15,9 @@ namespace lsMailServer
             string dataDir = Path.Combine(baseDir, "Data");
             string mailStoreDir = Path.Combine(baseDir, "Data", "MailStore");
 
-            // CreateDirectory is completely safe if the folder already exists
             Directory.CreateDirectory(dataDir);
+            Directory.CreateDirectory(Path.Combine(dataDir, "Certificates"));
             Directory.CreateDirectory(Path.Combine(dataDir, "MailStore", "Mailboxes"));
-            Directory.CreateDirectory(Path.Combine(dataDir, "MailStore", "Relay"));
 
             // 2. Load appsettings.json directly from inside the Data directory
             builder.Configuration
@@ -37,11 +36,10 @@ namespace lsMailServer
                     sp.GetRequiredService<ILogger<SmtpRelayService>>(),
                     sp.GetRequiredService<IConfiguration>(),
                     mailStoreDir
-                ));
-
-            
+                ));            
             builder.Services.AddHostedService(sp => sp.GetRequiredService<SmtpRelayService>());
-            builder.Services.AddHostedService<MailServerHostedService>();
+            builder.Services.AddSingleton<MailServerHostedService>();
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<MailServerHostedService>());
 
             // 5. Register Cookie Authentication
             builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

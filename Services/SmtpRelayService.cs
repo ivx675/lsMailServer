@@ -12,6 +12,8 @@ using System.IO;
 using System.Net;
 using System.Net.Mail;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using static lsMailServer.RestApi.RelayQueueController;
 
 namespace lsMailServer.Services 
 { 
@@ -257,6 +259,8 @@ namespace lsMailServer.Services
         // Thread-safe tracker to prevent duplicate processing of files currently in-flight across timer ticks
         private readonly ConcurrentDictionary<string, byte> _activeFiles = new(StringComparer.OrdinalIgnoreCase);
 
+        private readonly ConcurrentDictionary<string, SMTP_Client> _activeSessions = new(StringComparer.Ordinal);
+
         /// <summary>
         /// Initializes a new instance of the <see cref="SmtpRelayService"/> class, setting up 
         /// queue directories and binding configurable relay intervals, timeout thresholds, global concurrency, 
@@ -303,93 +307,6 @@ namespace lsMailServer.Services
             _smartHostTlsMode = smartHost.GetValue("TlsMode", TlsMode.Explicit);
         }
 
-        #region method StoreMessageAsync
-
-        /// <summary>
-        /// Persists an outbound MIME message stream and its companion RFC 3461 DSN metadata to the relay queue directory.
-        /// </summary>
-        /// <param name="mailFrom">The SMTP envelope sender address (<c>MAIL FROM</c>).</param>
-        /// <param name="rcptTo">The target recipient address (<c>RCPT TO</c>).</param>
-        /// <param name="smtpUtf8">Indicates whether the message requires <c>SMTPUTF8</c> (RFC 6531) extension support during relay.</param>
-        /// <param name="stream">The readable stream containing the raw MIME message payload.</param>
-        /// <param name="envId">The optional RFC 3461 envelope identifier (<c>ENVID</c>) used to correlate Delivery Status Notifications.</param>
-        /// <param name="originalRecipient">The optional RFC 3461 original recipient address (<c>ORCPT</c>) prior to any aliasing or forwarding.</param>
-        /// <param name="dsnRet">
-        /// Specifies whether the full message or only headers should be returned in a failed Delivery Status Notification (<c>RET</c>).
-        /// Preserves <see cref="SMTP_t_DSN_Ret.NotSpecified"/> when omitted by the client so relay behavior stays RFC-compliant.
-        /// </param>
-        /// <param name="dsnNotify">
-        /// Bitwise flags specifying the conditions under which a Delivery Status Notification should be generated (<c>NOTIFY</c>).
-        /// Preserves <see cref="SMTP_t_DSN_Notify.NotSpecified"/> when omitted by the client.
-        /// </param>
-        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-        /// <returns>The full file system path of the queued <c>.eml</c> message file.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
-        /// <exception cref="IOException">Thrown if writing the <c>.eml</c> payload or <c>.json</c> metadata file to disk fails.</exception>
-        /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via <paramref name="cancellationToken"/>.</exception>
-        public async Task<string> StoreMessageAsync(
-            string mailFrom, 
-            string rcptTo, 
-            bool smtpUtf8,
-            Stream stream,
-            string? envId,
-            string? originalRecipient,
-            SMTP_t_DSN_Ret dsnRet, 
-            SMTP_t_DSN_Notify dsnNotify,
-            CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(stream);
-
-            string uniqueId = $"{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}";
-            string emlPath = Path.Combine(_relayDir, $"{uniqueId}.eml");
-            string metaPath = Path.Combine(_relayDir, $"{uniqueId}.json");
-
-            // 1. Stream raw MIME message to disk
-            using (var fileStream = new FileStream(emlPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)) {
-                stream.Position = 0;
-                await stream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
-                await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            // 2. Extract recipient domain directly from the passed rcptTo address
-            string recipientDomain = "unknown.local";
-            try {
-                var parsedMail = new MailAddress(rcptTo);
-                recipientDomain = parsedMail.Host.ToLowerInvariant();
-            }
-            catch (Exception ex) {
-                _logger.LogWarning(ex, "Failed to parse domain from recipient address '{Recipient}', defaulting to 'unknown.local'", rcptTo);
-            }
-
-            // 3. Write companion metadata file
-            var metadata = new QueueMetadata
-            {
-                SmtpUtf8 = smtpUtf8,
-                EnvelopeSender = mailFrom,
-                RecipientAddress = rcptTo,
-                RecipientDomain = recipientDomain,
-                OriginalRecipient = originalRecipient,
-                EnvId = envId,
-                ReturnOption = dsnRet,
-                Notify = dsnNotify,
-                AttemptCount = 0,
-                FirstAttemptTime = DateTime.UtcNow,
-                NextRetryTime = DateTime.UtcNow,
-                DelayedNoticeSent = false
-            };
-
-            await File.WriteAllTextAsync(
-                metaPath, 
-                JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }), 
-                cancellationToken).ConfigureAwait(false);
-
-            _logger.LogInformation("Queued outbound message from {Sender} to recipient {Recipient} (Domain: {Domain}) at {Path}", 
-                mailFrom, rcptTo, recipientDomain, emlPath);
-        
-            return emlPath;
-        }
-
-        #endregion
 
         #region override method ExecuteAsync
 
@@ -755,6 +672,11 @@ namespace lsMailServer.Services
             using var smtpClient = new SMTP_Client();
             string? lastConnectError = null;            
 
+            string sessionId = Guid.NewGuid().ToString("N");
+            smtpClient.Tags["ID"] = sessionId;
+            _activeSessions[sessionId] = smtpClient;
+            smtpClient.Tags["StatusText"] = "Executing CONNECT";
+
             try {
                 foreach (var target in targets) {
                     IPAddress[]? ips;
@@ -798,9 +720,10 @@ namespace lsMailServer.Services
                 if (!smtpClient.IsConnected) {
                     return (Success: false, IsPermanent: false, Error: lastConnectError ?? $"Unable to connect to any mail server for {metadata.RecipientDomain}");
                 }
-
+                
                 // 3. ESMTP handshake, STARTTLS upgrade, and authentication
                 string localHostName = Dns.GetHostName();
+                smtpClient.Tags["StatusText"] = "Executing EHLO";
                 await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
 
                 if (!smtpClient.IsSecureConnection) {
@@ -811,13 +734,17 @@ namespace lsMailServer.Services
                             return (Success: false, IsPermanent: false, Error: $"Smart host '{_smartHostHost}' does not support required STARTTLS");
                         }
 
+                        smtpClient.Tags["StatusText"] = "Executing STARTTLS";
                         await smtpClient.StartTlsAsync(null, token).ConfigureAwait(false);
                         // RFC 3207 Section 4.2: Client MUST re-issue EHLO after STARTTLS completes
+                        smtpClient.Tags["StatusText"] = "Executing EHLO";
                         await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
                     }
                     else if (!useSmartHost && _useTlsIfPossible && serverSupportsStartTls) {
                         try {
+                            smtpClient.Tags["StatusText"] = "Executing STARTTLS";
                             await smtpClient.StartTlsAsync(null, token).ConfigureAwait(false);
+                            smtpClient.Tags["StatusText"] = "Executing EHLO";
                             await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
                         }
                         catch (Exception tlsEx)  {
@@ -831,6 +758,7 @@ namespace lsMailServer.Services
                 // Authenticate against Smart Host if credentials are configured
                 if (useSmartHost && !string.IsNullOrEmpty(_smartHostUserName)) {
                     var authMethod = smtpClient.AuthGetStrongestMethod(_smartHostUserName, _smartHostPassword ?? string.Empty);
+                    smtpClient.Tags["StatusText"] = "Executing AUTH";
                     await smtpClient.AuthAsync(authMethod, token).ConfigureAwait(false);
                 }
 
@@ -854,6 +782,7 @@ namespace lsMailServer.Services
 
                 // 5. Envelope and message payload transmission
                 await using var stream = File.OpenRead(emlFilePath);
+                smtpClient.Tags["StatusText"] = "Executing MAIL";
                 await smtpClient.MailFromAsync(
                     metadata.EnvelopeSender,
                     stream.Length,
@@ -862,12 +791,14 @@ namespace lsMailServer.Services
                     smtpUtf8: metadata.SmtpUtf8,
                     cancellationToken: token).ConfigureAwait(false);
 
+                smtpClient.Tags["StatusText"] = "Executing RCPT";
                 await smtpClient.RcptToAsync(
                     metadata.RecipientAddress,
                     wireNotify,
                     wireOrcpt,
                     token).ConfigureAwait(false);
 
+                smtpClient.Tags["StatusText"] = "Executing DATA/BDAT";
                 await smtpClient.SendMessageAsync(stream, true, token).ConfigureAwait(false);
 
                 return (Success: true, IsPermanent: false, Error: null);
@@ -896,6 +827,9 @@ namespace lsMailServer.Services
                     Path.GetFileName(emlFilePath), metadata.RecipientAddress, ex.Message);
 
                 return (Success: false, IsPermanent: false, Error: ex.Message);
+            }
+            finally {
+                _activeSessions.TryRemove(sessionId, out _);
             }
         }
 
@@ -1096,6 +1030,164 @@ namespace lsMailServer.Services
                 dsnRet: SMTP_t_DSN_Ret.Headers,
                 dsnNotify: SMTP_t_DSN_Notify.Never,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+
+        #endregion
+
+        #region method StoreMessageAsync
+
+        /// <summary>
+        /// Persists an outbound MIME message stream and its companion RFC 3461 DSN metadata to the relay queue directory.
+        /// </summary>
+        /// <param name="mailFrom">The SMTP envelope sender address (<c>MAIL FROM</c>).</param>
+        /// <param name="rcptTo">The target recipient address (<c>RCPT TO</c>).</param>
+        /// <param name="smtpUtf8">Indicates whether the message requires <c>SMTPUTF8</c> (RFC 6531) extension support during relay.</param>
+        /// <param name="stream">The readable stream containing the raw MIME message payload.</param>
+        /// <param name="envId">The optional RFC 3461 envelope identifier (<c>ENVID</c>) used to correlate Delivery Status Notifications.</param>
+        /// <param name="originalRecipient">The optional RFC 3461 original recipient address (<c>ORCPT</c>) prior to any aliasing or forwarding.</param>
+        /// <param name="dsnRet">
+        /// Specifies whether the full message or only headers should be returned in a failed Delivery Status Notification (<c>RET</c>).
+        /// Preserves <see cref="SMTP_t_DSN_Ret.NotSpecified"/> when omitted by the client so relay behavior stays RFC-compliant.
+        /// </param>
+        /// <param name="dsnNotify">
+        /// Bitwise flags specifying the conditions under which a Delivery Status Notification should be generated (<c>NOTIFY</c>).
+        /// Preserves <see cref="SMTP_t_DSN_Notify.NotSpecified"/> when omitted by the client.
+        /// </param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>The full file system path of the queued <c>.eml</c> message file.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="stream"/> is <see langword="null"/>.</exception>
+        /// <exception cref="IOException">Thrown if writing the <c>.eml</c> payload or <c>.json</c> metadata file to disk fails.</exception>
+        /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via <paramref name="cancellationToken"/>.</exception>
+        public async Task<string> StoreMessageAsync(
+            string mailFrom, 
+            string rcptTo, 
+            bool smtpUtf8,
+            Stream stream,
+            string? envId,
+            string? originalRecipient,
+            SMTP_t_DSN_Ret dsnRet, 
+            SMTP_t_DSN_Notify dsnNotify,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(stream);
+
+            string uniqueId = $"{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Random.Shared.Next():x8}";
+            string emlPath = Path.Combine(_relayDir, $"{uniqueId}.eml");
+            string metaPath = Path.Combine(_relayDir, $"{uniqueId}.json");
+
+            // 1. Stream raw MIME message to disk
+            using (var fileStream = new FileStream(emlPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)) {
+                stream.Position = 0;
+                await stream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
+                await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // 2. Extract recipient domain directly from the passed rcptTo address
+            string recipientDomain = "unknown.local";
+            try {
+                var parsedMail = new MailAddress(rcptTo);
+                recipientDomain = parsedMail.Host.ToLowerInvariant();
+            }
+            catch (Exception ex) {
+                _logger.LogWarning(ex, "Failed to parse domain from recipient address '{Recipient}', defaulting to 'unknown.local'", rcptTo);
+            }
+
+            // 3. Write companion metadata file
+            var metadata = new QueueMetadata
+            {
+                SmtpUtf8 = smtpUtf8,
+                EnvelopeSender = mailFrom,
+                RecipientAddress = rcptTo,
+                RecipientDomain = recipientDomain,
+                OriginalRecipient = originalRecipient,
+                EnvId = envId,
+                ReturnOption = dsnRet,
+                Notify = dsnNotify,
+                AttemptCount = 0,
+                FirstAttemptTime = DateTime.UtcNow,
+                NextRetryTime = DateTime.UtcNow,
+                DelayedNoticeSent = false
+            };
+
+            await File.WriteAllTextAsync(
+                metaPath, 
+                JsonSerializer.Serialize(metadata, new JsonSerializerOptions { WriteIndented = true }), 
+                cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation("Queued outbound message from {Sender} to recipient {Recipient} (Domain: {Domain}) at {Path}", 
+                mailFrom, rcptTo, recipientDomain, emlPath);
+        
+            return emlPath;
+        }
+
+        #endregion
+
+        #region method GetQueuedItems
+
+        /// <summary>
+        /// Retrieves a snapshot of all outbound messages currently waiting in the retry queue directory,
+        /// ordered chronologically by their first delivery attempt time.
+        /// </summary>
+        /// <returns>
+        /// A read-only list of <see cref="RelayQueueItemDto"/> instances representing the deferred messages.
+        /// Returns an empty list if the retry directory does not exist or contains no valid queue metadata files.
+        /// </returns>
+        public IReadOnlyList<RelayQueueItemDto> GetQueuedItems()
+        {
+            if (!Directory.Exists(_retryDir))
+                return Array.Empty<RelayQueueItemDto>();
+
+            /*
+            var jsonSerializerOptions  = new JsonSerializerOptions() {
+                WriteIndented = true,
+                Converters = { new JsonStringEnumConverter() }
+            };*/
+
+            var items = new List<RelayQueueItemDto>();
+            foreach (string metaPath in Directory.EnumerateFiles(_retryDir, "*.json")) {
+                try {
+                    string json = File.ReadAllText(metaPath);
+                    var meta = JsonSerializer.Deserialize<QueueMetadata>(json);
+                    if (meta is null)
+                        continue;
+
+                    string id = Path.GetFileNameWithoutExtension(metaPath);
+                    string emlPath = Path.ChangeExtension(metaPath, ".eml");
+                    long? sizeBytes = File.Exists(emlPath) ? new FileInfo(emlPath).Length : null;
+
+                    items.Add(new RelayQueueItemDto(
+                        Id: id,
+                        EnvelopeSender: meta.EnvelopeSender,
+                        RecipientAddress: meta.RecipientAddress,
+                        RecipientDomain: meta.RecipientDomain,
+                        AttemptCount: meta.AttemptCount,
+                        FirstAttemptTime: meta.FirstAttemptTime,
+                        NextRetryTime: meta.NextRetryTime,
+                        DelayedNoticeSent: meta.DelayedNoticeSent,
+                        LastError: meta.LastError,
+                        MessageSizeBytes: sizeBytes
+                    ));
+                }
+                catch (FileNotFoundException) { /* Delivered and deleted mid-scan */ }
+                catch (IOException) { /* Currently being updated by relay worker */ }
+            }
+
+            // Order by FirstAttemptTime first
+            items.Sort((a, b) => a.FirstAttemptTime.CompareTo(b.FirstAttemptTime));
+            return items;
+        }
+
+        #endregion
+
+
+        #region Properties implementation
+
+        /// <summary>
+        /// Gets the thread-safe collection of currently active outbound SMTP relay sessions, keyed by session ID.
+        /// </summary>
+        public ConcurrentDictionary<string, SMTP_Client> Sessions
+        {
+            get => _activeSessions;
         }
 
         #endregion
