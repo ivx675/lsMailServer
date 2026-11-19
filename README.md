@@ -69,12 +69,12 @@ Manage the entire mail server through a modern REST API and web-based administra
 - **Web Administration UI** built on top of the REST API.
 - **Domain Management** for creating, updating, and removing hosted mail domains.
 - **User & Mailbox Management** for managing users, passwords, aliases, and mailboxes.
+- **Session Monitoring** for active SMTP, POP3, and IMAP client connections.
+- **Relay Queue Monitoring** for outbound message tracking and delivery status.
 - **Automation Friendly** architecture for provisioning and integration with external systems.
 
 #### Planned (Beta Roadmap)
 
-- **Session Monitoring** for active SMTP, POP3, and IMAP client connections.
-- **Relay Queue Monitoring** for outbound message tracking and delivery status.
 - **System Settings Management** through the Web Administration UI.
 
 ### SMTP Server
