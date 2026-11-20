@@ -59056,10 +59056,15 @@
         </member>
         <member name="M:LumiSoft.Net.TCP.TCP_Server`1.TimeoutScan">
             <summary>
-            Scans all active sessions and disconnects those whose last activity
-            exceeds the configured idle timeout. Ensures timed‑out sessions invoke
-            their timeout handler and are disposed if not already closed.
+            Scans all active sessions and disconnects those whose last activity exceeds the configured
+            <see cref="P:LumiSoft.Net.TCP.TCP_Server`1.SessionIdleTimeout"/> threshold.
             </summary>
+            <remarks>
+            If the server is disposed, not running, or <see cref="P:LumiSoft.Net.TCP.TCP_Server`1.SessionIdleTimeout"/> is set to <c>0</c>,
+            the scan exits immediately without disconnecting any sessions. Individual session exceptions
+            (such as a session disposing concurrently during iteration) are safely suppressed, while
+            unexpected scan-level errors are routed to <see cref="M:LumiSoft.Net.TCP.TCP_Server`1.OnError(System.Exception)"/>.
+            </remarks>
         </member>
         <member name="P:LumiSoft.Net.TCP.TCP_Server`1.IsDisposed">
             <summary>

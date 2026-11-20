@@ -410,7 +410,7 @@ namespace lsMailServer.Services
             string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             using var connection = CreateConnection();
-            connection.Open();
+            
             using var cmd = connection.CreateCommand();
 
             // 1. Fetch the complete user details matching the GetUsers schema
@@ -649,7 +649,7 @@ namespace lsMailServer.Services
             errorMessage = string.Empty;
 
             using var connection = CreateConnection();
-            connection.Open();
+            
             using var transaction = connection.BeginTransaction();
 
             try
@@ -727,8 +727,7 @@ namespace lsMailServer.Services
                 WHERE a.EmailAddress = @email AND u.enabled = 1;
             ";
 
-            using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken);
+            using var connection = CreateConnection();
 
             using var command = new SqliteCommand(sql, connection);
             command.Parameters.AddWithValue("@email", normalizedEmail);
@@ -890,8 +889,7 @@ namespace lsMailServer.Services
             string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
             using var connection = CreateConnection();
-            connection.Open();
-
+            
             const string updateSql = @"
                 UPDATE Users 
                 SET QuotaSentCountToday = CASE WHEN QuotaLastSendDate = @today THEN QuotaSentCountToday + 1 ELSE 1 END,

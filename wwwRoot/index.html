@@ -48,6 +48,9 @@
             <i class="fa-solid fa-plug"></i><span>Active Sessions</span>
             <span id="sessionsCountBadge" class="hidden ml-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">0</span>
         </button>
+        <button onclick="switchTab('logs')" id="tab-logs" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
+            <i class="fa-solid fa-file-lines"></i><span>Server Logs</span>
+        </button>
     </nav>
 
     <!-- Content Container -->
@@ -311,6 +314,114 @@
                     <i class="fa-solid fa-plug-circle-xmark text-4xl mb-3 text-slate-600"></i>
                     <p class="text-base font-medium">No active sessions</p>
                     <p class="text-xs text-slate-500 mt-1">No clients are currently connected matching your filter.</p>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- ================= SERVER LOGS TAB ================= -->
+        <section id="section-logs" class="hidden space-y-6">
+            <!-- Top Source Toggle & Actions Bar -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
+                <!-- Source Mode Switcher -->
+                <div class="inline-flex bg-slate-900 border border-slate-700 rounded-lg p-1 self-start">
+                    <button type="button" id="logSourceLiveBtn" onclick="setLogSource('live')"
+                            class="px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors bg-blue-600 text-white flex items-center space-x-2">
+                        <span id="logLiveDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Live (Memory)</span>
+                    </button>
+                    <button type="button" id="logSourceStoredBtn" onclick="setLogSource('stored')"
+                            class="px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors text-slate-300 hover:text-white flex items-center space-x-2">
+                        <i class="fa-solid fa-hard-drive text-[11px]"></i>
+                        <span>Stored (Warnings &amp; Errors)</span>
+                    </button>
+                </div>
+
+                <!-- Filters & Controls -->
+                <div class="flex flex-wrap items-center gap-2.5 flex-1 lg:justify-end">
+                    <select id="logLevelFilter" onchange="onLogLevelFilterChange()" title="Log level filter"
+                            class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="All">All Levels</option>
+                        <option value="Debug">Debug+</option>
+                        <option value="Information" selected>Information+</option>
+                        <option value="Warning">Warning+</option>
+                        <option value="Error">Error Only</option>
+                    </select>
+
+                    <select id="logCategoryFilter" onchange="filterLogsLocally()" title="Source / Category filter"
+                            class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="All">All Sources</option>
+                        <option value="SMTP">SMTP</option>
+                        <option value="Relay">Relay</option>
+                        <option value="IMAP">IMAP</option>
+                        <option value="POP3">POP3</option>
+                        <option value="System">System</option>
+                    </select>
+
+                    <select id="logFileSelect" onchange="loadLogs()" title="Stored log file"
+                            class="hidden bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </select>
+
+                    <div class="relative flex-1 min-w-[190px] lg:max-w-xs">
+                        <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-search"></i>
+                        </span>
+                        <input type="text" id="logSearchInput" oninput="filterLogsLocally()" placeholder="Filter message, IP, ID..."
+                               class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+
+                    <button type="button" id="logPauseBtn" onclick="toggleLogPause()"
+                            class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
+                        <i id="logPauseIcon" class="fa-solid fa-pause"></i>
+                        <span id="logPauseText">Pause</span>
+                    </button>
+
+                    <label id="logAutoScrollWrap" class="inline-flex items-center space-x-1.5 text-xs text-slate-300 cursor-pointer select-none px-1">
+                        <input type="checkbox" id="logAutoScrollChk" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                        <span>Auto-scroll</span>
+                    </label>
+
+                    <button type="button" onclick="loadLogs(true)"
+                            class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
+                        <i class="fa-solid fa-rotate"></i>
+                        <span>Refresh</span>
+                    </button>
+
+                    <button type="button" id="logClearLiveBtn" onclick="clearLiveLogs()"
+                            class="px-3 py-2 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
+                        <i class="fa-solid fa-trash-can"></i>
+                        <span>Clear</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status / Meta Strip -->
+            <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 px-1">
+                <span id="logStatusSummary">Showing 0 entries</span>
+                <span id="logSourceInfo">Source: In-memory live ring buffer</span>
+            </div>
+
+            <!-- Logs Table Card -->
+            <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-sm overflow-hidden">
+                <div id="logsScrollContainer" class="overflow-x-auto overflow-y-auto max-h-[calc(100vh-340px)]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
+                            <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3 px-4 w-44">Timestamp</th>
+                                <th class="py-3 px-4 w-28">Level</th>
+                                <th class="py-3 px-4 w-28">Source</th>
+                                <th class="py-3 px-4">Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody" class="divide-y divide-slate-700/60 text-xs font-mono">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="logsEmptyState" class="hidden p-12 text-center text-slate-400">
+                    <i class="fa-solid fa-file-lines text-4xl mb-3 text-slate-600"></i>
+                    <p class="text-base font-medium">No log entries found</p>
+                    <p class="text-xs text-slate-500 mt-1">Adjust your severity/source filter or wait for new server events.</p>
                 </div>
             </div>
         </section>
@@ -667,6 +778,7 @@
         const USERS_API = '/api/users';
         const RELAY_QUEUE_API = '/api/relay-queue';
         const SESSIONS_API = '/api/sessions';
+        const LOGS_API = '/api/logs';
         const BYTES_PER_MB = 1024 * 1024;
         const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -676,6 +788,11 @@
         let sessionsCache = [];
         let sessionProtocolFilter = 'ALL';
         let sessionsRefreshTimer = null;
+        let logsCache = [];
+        let logSourceMode = 'live'; // 'live' | 'stored'
+        let logsPaused = false;
+        let logsRefreshTimer = null;
+        let expandedLogKey = null;
         let currentInspectingQueueItem = null;
         let deleteContext = null; // 'domain', 'user', 'user-email', 'queue-item', or 'session'
         let pendingDeleteEmail = null;
@@ -691,6 +808,7 @@
             });
             if (res.status === 401) {
                 clearInterval(sessionsRefreshTimer);
+                clearInterval(logsRefreshTimer);
                 document.getElementById('loginModal').classList.remove('hidden');
                 throw new Error('Authentication required. Please sign in.');
             }
@@ -768,6 +886,8 @@
                 } else if (currentTab === 'sessions') {
                     loadSessions();
                     resetSessionsTimer();
+                } else if (currentTab === 'logs') {
+                    initLogsTab();
                 } else {
                     loadDomains();
                 }
@@ -797,6 +917,7 @@
             usersCache = [];
             queueCache = [];
             sessionsCache = [];
+            logsCache = [];
             updateQueueBadge(0);
             updateSessionsBadge(0);
             document.getElementById('authUsernameDisplay').textContent = '';
@@ -811,6 +932,7 @@
             document.getElementById('section-users').classList.toggle('hidden', tab !== 'users');
             document.getElementById('section-queue').classList.toggle('hidden', tab !== 'queue');
             document.getElementById('section-sessions').classList.toggle('hidden', tab !== 'sessions');
+            document.getElementById('section-logs').classList.toggle('hidden', tab !== 'logs');
 
             const activeClass = 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-blue-500 text-blue-400 flex items-center space-x-2 whitespace-nowrap';
             const inactiveClass = 'py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap';
@@ -819,12 +941,17 @@
             document.getElementById('tab-users').className = tab === 'users' ? activeClass : inactiveClass;
             document.getElementById('tab-queue').className = tab === 'queue' ? activeClass : inactiveClass;
             document.getElementById('tab-sessions').className = tab === 'sessions' ? activeClass : inactiveClass;
+            document.getElementById('tab-logs').className = tab === 'logs' ? activeClass : inactiveClass;
+
+            clearInterval(sessionsRefreshTimer);
+            clearInterval(logsRefreshTimer);
 
             if (tab === 'sessions') {
                 loadSessions();
                 resetSessionsTimer();
+            } else if (tab === 'logs') {
+                initLogsTab();
             } else {
-                clearInterval(sessionsRefreshTimer);
                 if (tab === 'domains') loadDomains();
                 if (tab === 'users') loadUsers();
                 if (tab === 'queue') loadRelayQueue();
@@ -941,19 +1068,19 @@
                 const escapedNameForJs = d.name.replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                        <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
-                            <i class="fa-solid fa-globe text-blue-400 text-xs"></i>
-                            <span>${escapeHtml(d.name)}</span>
-                        </td>
-                        <td class="py-3.5 px-6 text-slate-300">${descText}</td>
-                        <td class="py-3.5 px-6 text-center">${statusBadge}</td>
-                        <td class="py-3.5 px-6 text-right">
-                            <button onclick="openEditDomainModal('${escapedNameForJs}')"
-                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                <i class="fa-solid fa-gear mr-1"></i> Manage
-                            </button>
-                        </td>
-                    `;
+                            <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
+                                <i class="fa-solid fa-globe text-blue-400 text-xs"></i>
+                                <span>${escapeHtml(d.name)}</span>
+                            </td>
+                            <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                            <td class="py-3.5 px-6 text-center">${statusBadge}</td>
+                            <td class="py-3.5 px-6 text-right">
+                                <button onclick="openEditDomainModal('${escapedNameForJs}')"
+                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                    <i class="fa-solid fa-gear mr-1"></i> Manage
+                                </button>
+                            </td>
+                        `;
                 tbody.appendChild(tr);
             });
         }
@@ -1072,21 +1199,21 @@
 
             if (days >= 90) {
                 return `
-                        <div class="text-xs text-rose-400 font-medium">${dateStr}</div>
-                        <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">${days}d inactive</span>
-                    `;
+                            <div class="text-xs text-rose-400 font-medium">${dateStr}</div>
+                            <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">${days}d inactive</span>
+                        `;
             }
             if (days >= 30) {
                 return `
-                        <div class="text-xs text-amber-400 font-medium">${dateStr}</div>
-                        <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">${days}d ago</span>
-                    `;
+                            <div class="text-xs text-amber-400 font-medium">${dateStr}</div>
+                            <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">${days}d ago</span>
+                        `;
             }
             const relText = days === 0 ? 'Today' : (days === 1 ? 'Yesterday' : `${days}d ago`);
             return `
-                    <div class="text-xs text-slate-300">${dateStr}</div>
-                    <div class="text-[11px] text-slate-500">${relText}</div>
-                `;
+                        <div class="text-xs text-slate-300">${dateStr}</div>
+                        <div class="text-[11px] text-slate-500">${relText}</div>
+                    `;
         }
 
         function filterUsersLocally() {
@@ -1148,30 +1275,30 @@
                     : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
 
                 tr.innerHTML = `
-                        <td class="py-3.5 px-6 font-medium text-slate-100 whitespace-nowrap">
-                            <div class="flex items-center space-x-2">
-                                <i class="fa-solid fa-user text-blue-400 text-xs"></i>
-                                <span>${escapeHtml(u.userName)}</span>
-                            </div>
-                        </td>
-                        <td class="py-3.5 px-6">${aliasesHtml}</td>
-                        <td class="py-3.5 px-6 text-slate-300">${descText}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">
-                            <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
-                            <div class="w-28 bg-slate-900 rounded-full h-1.5 border border-slate-700/60">
-                                <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
-                            </div>
-                        </td>
-                        <td class="py-3.5 px-6 text-slate-300 text-xs font-mono whitespace-nowrap">${u.sentCountToday} / ${u.maxDailySends}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">${formatLastLoginBadge(u.lastLoginDate)}</td>
-                        <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
-                        <td class="py-3.5 px-6 text-right whitespace-nowrap">
-                            <button onclick="openEditUserModal('${escapeHtml(u.userId)}')"
-                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                <i class="fa-solid fa-gear mr-1"></i> Manage
-                            </button>
-                        </td>
-                    `;
+                            <td class="py-3.5 px-6 font-medium text-slate-100 whitespace-nowrap">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fa-solid fa-user text-blue-400 text-xs"></i>
+                                    <span>${escapeHtml(u.userName)}</span>
+                                </div>
+                            </td>
+                            <td class="py-3.5 px-6">${aliasesHtml}</td>
+                            <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">
+                                <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
+                                <div class="w-28 bg-slate-900 rounded-full h-1.5 border border-slate-700/60">
+                                    <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
+                                </div>
+                            </td>
+                            <td class="py-3.5 px-6 text-slate-300 text-xs font-mono whitespace-nowrap">${u.sentCountToday} / ${u.maxDailySends}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">${formatLastLoginBadge(u.lastLoginDate)}</td>
+                            <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
+                            <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                                <button onclick="openEditUserModal('${escapeHtml(u.userId)}')"
+                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                    <i class="fa-solid fa-gear mr-1"></i> Manage
+                                </button>
+                            </td>
+                        `;
                 tbody.appendChild(tr);
             });
         }
@@ -1277,16 +1404,16 @@
                 li.className = 'px-3 py-2 flex items-center justify-between text-xs hover:bg-slate-800/60 transition-colors';
                 const escapedEmailJs = email.replace(/'/g, "\\'");
                 li.innerHTML = `
-                        <span class="font-mono text-slate-200 flex items-center space-x-2">
-                            <i class="fa-solid fa-envelope text-blue-400"></i>
-                            <span>${escapeHtml(email)}</span>
-                        </span>
-                        <button type="button" onclick="openDeleteConfirmModal('user-email', '${escapedEmailJs}')"
-                                title="Remove email address"
-                                class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded hover:bg-rose-500/10 transition-colors">
-                            <i class="fa-solid fa-trash-can"></i>
-                        </button>
-                    `;
+                            <span class="font-mono text-slate-200 flex items-center space-x-2">
+                                <i class="fa-solid fa-envelope text-blue-400"></i>
+                                <span>${escapeHtml(email)}</span>
+                            </span>
+                            <button type="button" onclick="openDeleteConfirmModal('user-email', '${escapedEmailJs}')"
+                                    title="Remove email address"
+                                    class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded hover:bg-rose-500/10 transition-colors">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        `;
                 ul.appendChild(li);
             });
         }
@@ -1409,14 +1536,14 @@
 
             if (diffMs <= 0) {
                 return `
-                        <div class="text-xs text-emerald-400 font-medium">Due now</div>
-                        <div class="text-[11px] text-slate-500">${timeStr}</div>
-                    `;
+                            <div class="text-xs text-emerald-400 font-medium">Due now</div>
+                            <div class="text-[11px] text-slate-500">${timeStr}</div>
+                        `;
             }
             return `
-                    <div class="text-xs text-slate-200 font-medium">in ${formatRelativeDuration(diffMs)}</div>
-                    <div class="text-[11px] text-slate-500">${timeStr}</div>
-                `;
+                        <div class="text-xs text-slate-200 font-medium">in ${formatRelativeDuration(diffMs)}</div>
+                        <div class="text-[11px] text-slate-500">${timeStr}</div>
+                    `;
         }
 
         function filterQueueLocally() {
@@ -1474,38 +1601,38 @@
                 const escapedIdJs = (item.id || '').replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                        <td class="py-3.5 px-6">
-                            <div class="flex flex-col space-y-0.5">
-                                <div>${senderDisplay}</div>
-                                <div class="flex items-center space-x-1.5 text-slate-100 font-mono text-xs">
-                                    <i class="fa-solid fa-arrow-right text-blue-400 text-[10px]"></i>
-                                    <span>${escapeHtml(item.recipientAddress)}</span>
+                            <td class="py-3.5 px-6">
+                                <div class="flex flex-col space-y-0.5">
+                                    <div>${senderDisplay}</div>
+                                    <div class="flex items-center space-x-1.5 text-slate-100 font-mono text-xs">
+                                        <i class="fa-solid fa-arrow-right text-blue-400 text-[10px]"></i>
+                                        <span>${escapeHtml(item.recipientAddress)}</span>
+                                    </div>
                                 </div>
-                            </div>
-                        </td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">
-                            <div class="text-xs font-semibold text-slate-200">${item.attemptCount}</div>
-                            ${delayBadge}
-                        </td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">${formatNextRetryHtml(item.nextRetryTime)}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">
-                            <div class="text-xs text-slate-200">${ageStr}</div>
-                            <div class="text-[11px] text-slate-500 font-mono">${formatBytes(item.messageSizeBytes)}</div>
-                        </td>
-                        <td class="py-3.5 px-6">${errorText}</td>
-                        <td class="py-3.5 px-6 text-right whitespace-nowrap space-x-1.5">
-                            <button onclick="openQueueDetailsModal('${escapedIdJs}')"
-                                class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                <i class="fa-solid fa-eye mr-1"></i> Inspect
-                            </button>
-                            <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
-                            <button onclick="openDeleteConfirmModal('queue-item', '${escapedIdJs}')" title="Delete Queued Message"
-                                class="px-2.5 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
-                            -->
-                        </td>
-                    `;
+                            </td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">
+                                <div class="text-xs font-semibold text-slate-200">${item.attemptCount}</div>
+                                ${delayBadge}
+                            </td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">${formatNextRetryHtml(item.nextRetryTime)}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">
+                                <div class="text-xs text-slate-200">${ageStr}</div>
+                                <div class="text-[11px] text-slate-500 font-mono">${formatBytes(item.messageSizeBytes)}</div>
+                            </td>
+                            <td class="py-3.5 px-6">${errorText}</td>
+                            <td class="py-3.5 px-6 text-right whitespace-nowrap space-x-1.5">
+                                <button onclick="openQueueDetailsModal('${escapedIdJs}')"
+                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                                    <i class="fa-solid fa-eye mr-1"></i> Inspect
+                                </button>
+                                <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
+                                <button onclick="openDeleteConfirmModal('queue-item', '${escapedIdJs}')" title="Delete Queued Message"
+                                    class="px-2.5 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                                -->
+                            </td>
+                        `;
                 tbody.appendChild(tr);
             });
         }
@@ -1685,23 +1812,23 @@
                 const escapedIdJs = (s.id || '').replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                        <td class="py-3.5 px-6 whitespace-nowrap">${getProtocolBadgeHtml(s.protocol)}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">
-                            <div class="font-mono text-xs text-slate-100">${escapeHtml(s.remoteEndPoint)}</div>
-                            <div class="font-mono text-[11px] text-slate-500">${escapeHtml(s.id)}</div>
-                        </td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">${userHtml}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">${statusBadge}</td>
-                        <td class="py-3.5 px-6 whitespace-nowrap">${transportHtml}</td>
-                        <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(connectTooltip)}">${connectDuration}</td>
-                        <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(activityTooltip)}">${activityText}</td>
-                        <td class="py-3.5 px-6 text-right whitespace-nowrap">
-                            <button onclick="openDeleteConfirmModal('session', '${escapedProtoJs}|${escapedIdJs}')" title="Disconnect Session"
-                                class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
-                                <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Disconnect
-                            </button>
-                        </td>
-                    `;
+                            <td class="py-3.5 px-6 whitespace-nowrap">${getProtocolBadgeHtml(s.protocol)}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">
+                                <div class="font-mono text-xs text-slate-100">${escapeHtml(s.remoteEndPoint)}</div>
+                                <div class="font-mono text-[11px] text-slate-500">${escapeHtml(s.id)}</div>
+                            </td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">${userHtml}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">${statusBadge}</td>
+                            <td class="py-3.5 px-6 whitespace-nowrap">${transportHtml}</td>
+                            <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(connectTooltip)}">${connectDuration}</td>
+                            <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(activityTooltip)}">${activityText}</td>
+                            <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                                <button onclick="openDeleteConfirmModal('session', '${escapedProtoJs}|${escapedIdJs}')" title="Disconnect Session"
+                                    class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
+                                    <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Disconnect
+                                </button>
+                            </td>
+                        `;
                 tbody.appendChild(tr);
             });
         }
@@ -1833,6 +1960,426 @@
                 } catch (err) {
                     showToast(err.message, true);
                 }
+            }
+        }
+
+        // ==========================================
+        // SERVER LOGS LOGIC (DELTA AFTERID + INCREMENTAL TR APPEND)
+        // ==========================================
+        const LOG_LEVEL_RANK = {
+            Trace: 0,
+            Debug: 1,
+            Information: 2,
+            Warning: 3,
+            Error: 4,
+            Critical: 5
+        };
+        const MAX_LIVE_LOG_CACHE = 500;
+        const STANDARD_LOG_CATEGORIES = new Set(['SMTP', 'Relay', 'IMAP', 'POP3']);
+
+        let lastSeenLogId = 0;
+        let renderedLogKeys = [];
+        let renderedLogFilterSig = '';
+
+        function getCurrentLogFilterSig() {
+            const minLevel = document.getElementById('logLevelFilter').value;
+            const category = document.getElementById('logCategoryFilter').value;
+            const query = document.getElementById('logSearchInput').value.trim().toLowerCase();
+            const fileVal = logSourceMode === 'stored' ? (document.getElementById('logFileSelect').value || '') : '';
+            return `${logSourceMode}|${minLevel}|${category}|${query}|${fileVal}|${expandedLogKey || ''}`;
+        }
+
+        function resetLiveCursor() {
+            lastSeenLogId = 0;
+            logsCache = [];
+            expandedLogKey = null;
+            renderedLogKeys = [];
+            renderedLogFilterSig = '';
+        }
+
+        async function initLogsTab() {
+            if (logSourceMode === 'live') {
+                resetLiveCursor();
+            } else {
+                await loadStoredLogFiles();
+            }
+            await loadLogs();
+            resetLogsTimer();
+        }
+
+        function resetLogsTimer() {
+            clearInterval(logsRefreshTimer);
+            if (currentTab === 'logs' && logSourceMode === 'live' && !logsPaused) {
+                logsRefreshTimer = setInterval(loadLogs, 2500);
+            }
+        }
+
+        async function setLogSource(mode) {
+            logSourceMode = mode;
+            expandedLogKey = null;
+            renderedLogKeys = [];
+            renderedLogFilterSig = '';
+
+            const isLive = mode === 'live';
+            const liveBtn = document.getElementById('logSourceLiveBtn');
+            const storedBtn = document.getElementById('logSourceStoredBtn');
+
+            liveBtn.className = isLive
+                ? 'px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors bg-blue-600 text-white flex items-center space-x-2'
+                : 'px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors text-slate-300 hover:text-white flex items-center space-x-2';
+            storedBtn.className = !isLive
+                ? 'px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors bg-blue-600 text-white flex items-center space-x-2'
+                : 'px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors text-slate-300 hover:text-white flex items-center space-x-2';
+
+            document.getElementById('logFileSelect').classList.toggle('hidden', isLive);
+            document.getElementById('logPauseBtn').classList.toggle('hidden', !isLive);
+            document.getElementById('logAutoScrollWrap').classList.toggle('hidden', !isLive);
+            document.getElementById('logClearLiveBtn').classList.toggle('hidden', !isLive);
+
+            const levelSelect = document.getElementById('logLevelFilter');
+            if (!isLive && (levelSelect.value === 'Debug' || levelSelect.value === 'Information')) {
+                levelSelect.value = 'All';
+            } else if (isLive && levelSelect.value === 'All') {
+                levelSelect.value = 'Information';
+            }
+
+            if (isLive) {
+                resetLiveCursor();
+                resetLogsTimer();
+            } else {
+                clearInterval(logsRefreshTimer);
+                logsCache = [];
+                await loadStoredLogFiles();
+            }
+
+            await loadLogs();
+        }
+
+        function onLogLevelFilterChange() {
+            if (logSourceMode === 'live') {
+                resetLiveCursor();
+            }
+            loadLogs();
+        }
+
+        function toggleLogPause() {
+            logsPaused = !logsPaused;
+            const icon = document.getElementById('logPauseIcon');
+            const text = document.getElementById('logPauseText');
+            const dot = document.getElementById('logLiveDot');
+
+            if (logsPaused) {
+                icon.className = 'fa-solid fa-play';
+                text.textContent = 'Resume';
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400';
+                clearInterval(logsRefreshTimer);
+            } else {
+                icon.className = 'fa-solid fa-pause';
+                text.textContent = 'Pause';
+                dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+                loadLogs();
+                resetLogsTimer();
+            }
+        }
+
+        async function loadStoredLogFiles() {
+            const select = document.getElementById('logFileSelect');
+            const previousVal = select.value;
+            try {
+                const res = await apiFetch(`${LOGS_API}/stored/files`);
+                if (!res.ok) throw new Error('Failed to list stored log files');
+                const files = await res.json();
+
+                select.innerHTML = '';
+                if (!files || files.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.value = '';
+                    opt.textContent = 'No stored log files';
+                    select.appendChild(opt);
+                    return;
+                }
+
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.fileName;
+                    opt.textContent = `${f.fileName} (${formatBytes(f.sizeBytes)})`;
+                    select.appendChild(opt);
+                });
+
+                if (previousVal && files.some(f => f.fileName === previousVal)) {
+                    select.value = previousVal;
+                }
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to load stored log files.', true);
+            }
+        }
+
+        async function loadLogs(forceFullReload = false) {
+            const level = document.getElementById('logLevelFilter').value;
+
+            try {
+                if (logSourceMode === 'live') {
+                    if (forceFullReload) {
+                        resetLiveCursor();
+                    }
+
+                    const params = new URLSearchParams({
+                        afterId: String(lastSeenLogId),
+                        minLevel: level,
+                        limit: String(MAX_LIVE_LOG_CACHE)
+                    });
+
+                    const res = await apiFetch(`${LOGS_API}/live?${params.toString()}`);
+                    if (!res.ok) throw new Error('Failed to load live server logs');
+
+                    const delta = await res.json();
+                    if (!Array.isArray(delta) || delta.length === 0) {
+                        // Nothing new: skip UI & DOM work completely
+                        return;
+                    }
+
+                    let evictedCount = 0;
+                    for (const item of delta) {
+                        if (typeof item.id === 'number' && item.id > lastSeenLogId) {
+                            lastSeenLogId = item.id;
+                        }
+                        logsCache.push(item);
+                    }
+
+                    if (logsCache.length > MAX_LIVE_LOG_CACHE) {
+                        evictedCount = logsCache.length - MAX_LIVE_LOG_CACHE;
+                        logsCache.splice(0, evictedCount);
+                    }
+
+                    filterLogsLocally({ allowIncrementalAppend: evictedCount === 0 });
+                } else {
+                    const fileSelect = document.getElementById('logFileSelect');
+                    const selectedFile = fileSelect.value;
+                    if (!selectedFile) {
+                        logsCache = [];
+                        filterLogsLocally();
+                        return;
+                    }
+
+                    const params = new URLSearchParams({ file: selectedFile, limit: '500' });
+                    if (level === 'Error') {
+                        params.append('level', 'Error');
+                    }
+
+                    const res = await apiFetch(`${LOGS_API}/stored?${params.toString()}`);
+                    if (!res.ok) {
+                        if (res.status === 404) {
+                            logsCache = [];
+                            filterLogsLocally();
+                            return;
+                        }
+                        throw new Error('Failed to load stored server logs');
+                    }
+
+                    logsCache = await res.json();
+                    filterLogsLocally();
+                }
+            } catch (err) {
+                console.error(err);
+                if (!logsPaused) {
+                    showToast(err.message || 'Failed to fetch logs.', true);
+                }
+            }
+        }
+
+        async function clearLiveLogs() {
+            try {
+                const res = await apiFetch(`${LOGS_API}/live`, { method: 'DELETE' });
+                if (!res.ok) throw new Error('Failed to clear live log buffer');
+                // Keep lastSeenLogId monotonic so in-flight polls won't re-add cleared IDs
+                logsCache = [];
+                expandedLogKey = null;
+                renderedLogKeys = [];
+                renderedLogFilterSig = '';
+                filterLogsLocally();
+                showToast('Live log buffer cleared.');
+            } catch (err) {
+                showToast(err.message || 'Failed to clear live logs.', true);
+            }
+        }
+
+        function matchesLogEntry(entry, minLevel, category, query) {
+            if (minLevel !== 'All') {
+                if (minLevel === 'Error') {
+                    if (entry.level !== 'Error' && entry.level !== 'Critical') return false;
+                } else {
+                    const rank = LOG_LEVEL_RANK[entry.level] ?? 0;
+                    const minRank = LOG_LEVEL_RANK[minLevel] ?? 0;
+                    if (rank < minRank) return false;
+                }
+            }
+
+            if (category !== 'All') {
+                if (category === 'System') {
+                    if (STANDARD_LOG_CATEGORIES.has(entry.category)) return false;
+                } else if ((entry.category || '').toLowerCase() !== category.toLowerCase()) {
+                    return false;
+                }
+            }
+
+            if (query) {
+                const hay = `${entry.id ?? ''} ${entry.message || ''} ${entry.category || ''} ${entry.level || ''} ${entry.detail || ''}`.toLowerCase();
+                if (!hay.includes(query)) return false;
+            }
+
+            return true;
+        }
+
+        function filterLogsLocally(options = {}) {
+            const allowIncrementalAppend = Boolean(options.allowIncrementalAppend);
+            const minLevel = document.getElementById('logLevelFilter').value;
+            const category = document.getElementById('logCategoryFilter').value;
+            const query = document.getElementById('logSearchInput').value.trim().toLowerCase();
+
+            const filtered = [];
+            for (const entry of (logsCache || [])) {
+                if (matchesLogEntry(entry, minLevel, category, query)) {
+                    filtered.push(entry);
+                }
+            }
+
+            document.getElementById('logStatusSummary').textContent =
+                `Showing ${filtered.length} of ${logsCache.length} entries (${logSourceMode === 'live' ? 'Live' : 'Stored'})`;
+            document.getElementById('logSourceInfo').textContent = logSourceMode === 'live'
+                ? `Source: Live ring buffer (cursor #${lastSeenLogId}, poll 2.5s)`
+                : `Source: ${document.getElementById('logFileSelect').value || 'Stored warning/error log'}`;
+
+            renderLogsTable(filtered, { allowIncrementalAppend });
+        }
+
+        function getLogLevelBadgeHtml(level) {
+            const l = (level || 'Information');
+            if (l === 'Error' || l === 'Critical') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30">${escapeHtml(l)}</span>`;
+            }
+            if (l === 'Warning') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30">${escapeHtml(l)}</span>`;
+            }
+            if (l === 'Information') {
+                return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/30">${escapeHtml(l)}</span>`;
+            }
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-700/80 text-slate-300 border border-slate-600/60">${escapeHtml(l)}</span>`;
+        }
+
+        function formatLogTimestamp(ts) {
+            if (!ts) return '—';
+            const d = new Date(ts);
+            if (isNaN(d.getTime())) return escapeHtml(ts);
+            const pad = (n, w = 2) => String(n).padStart(w, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+        }
+
+        function getLogEntryKey(entry, idx) {
+            if (entry && entry.id !== undefined && entry.id !== null && entry.id > 0) {
+                return `id:${entry.id}`;
+            }
+            return `row:${entry.timestamp || ''}|${entry.category || ''}|${idx}`;
+        }
+
+        function toggleLogRowDetail(key) {
+            expandedLogKey = expandedLogKey === key ? null : key;
+            filterLogsLocally({ allowIncrementalAppend: false });
+        }
+
+        function createLogRowElements(entry, idx) {
+            const rowKey = getLogEntryKey(entry, idx);
+            const isExpanded = expandedLogKey === rowKey;
+            const rows = [];
+
+            const tr = document.createElement('tr');
+            tr.className = `cursor-pointer transition-colors ${isExpanded ? 'bg-blue-500/10' : 'hover:bg-slate-900/40'}`;
+            tr.onclick = () => toggleLogRowDetail(rowKey);
+
+            const hasDetail = entry.detail && entry.detail.trim().length > 0;
+            const detailTag = hasDetail
+                ? ' <span class="text-blue-400 hover:underline ml-1">[+details]</span>'
+                : '';
+
+            tr.innerHTML = `
+                        <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap align-top">${formatLogTimestamp(entry.timestamp)}</td>
+                        <td class="py-2.5 px-4 whitespace-nowrap align-top">${getLogLevelBadgeHtml(entry.level)}</td>
+                        <td class="py-2.5 px-4 text-slate-300 whitespace-nowrap align-top">${escapeHtml(entry.category || 'System')}</td>
+                        <td class="py-2.5 px-4 text-slate-100 break-words align-top">${escapeHtml(entry.message || '')}${detailTag}</td>
+                    `;
+            rows.push(tr);
+
+            if (isExpanded) {
+                const detailTr = document.createElement('tr');
+                detailTr.className = 'bg-slate-950/90';
+                const idLine = (entry.id !== undefined && entry.id !== null && entry.id > 0) ? `Id        : #${entry.id}
+` : '';
+                const detailBody = hasDetail
+                    ? `${idLine}${entry.detail}`
+                    : `${idLine}Timestamp : ${entry.timestamp || '—'}
+Level     : ${entry.level || '—'}
+Source    : ${entry.category || '—'}
+Message   : ${entry.message || ''}`;
+
+                detailTr.innerHTML = `
+                            <td colspan="4" class="px-4 py-3 border-t border-slate-800">
+                                <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words">${escapeHtml(detailBody)}</pre>
+                            </td>
+                        `;
+                rows.push(detailTr);
+            }
+
+            return { rowKey, rows };
+        }
+
+        function renderLogsTable(entries, options = {}) {
+            const tbody = document.getElementById('logsTableBody');
+            const emptyState = document.getElementById('logsEmptyState');
+            const allowIncrementalAppend = Boolean(options.allowIncrementalAppend);
+            const filterSig = getCurrentLogFilterSig();
+
+            if (!entries || entries.length === 0) {
+                tbody.innerHTML = '';
+                renderedLogKeys = [];
+                renderedLogFilterSig = filterSig;
+                emptyState.classList.remove('hidden');
+                return;
+            }
+            emptyState.classList.add('hidden');
+
+            const nextKeys = entries.map((entry, idx) => getLogEntryKey(entry, idx));
+
+            // Fast incremental append path: existing prefix matches 1:1 and only new rows were added at the end
+            const canAppend =
+                allowIncrementalAppend &&
+                expandedLogKey === null &&
+                filterSig === renderedLogFilterSig &&
+                renderedLogKeys.length > 0 &&
+                nextKeys.length > renderedLogKeys.length &&
+                renderedLogKeys.every((k, i) => nextKeys[i] === k);
+
+            if (canAppend) {
+                const fragment = document.createDocumentFragment();
+                for (let i = renderedLogKeys.length; i < entries.length; i++) {
+                    const { rows } = createLogRowElements(entries[i], i);
+                    for (const r of rows) fragment.appendChild(r);
+                }
+                tbody.appendChild(fragment);
+            } else {
+                const fragment = document.createDocumentFragment();
+                for (let i = 0; i < entries.length; i++) {
+                    const { rows } = createLogRowElements(entries[i], i);
+                    for (const r of rows) fragment.appendChild(r);
+                }
+                tbody.replaceChildren(fragment);
+            }
+
+            renderedLogKeys = nextKeys;
+            renderedLogFilterSig = filterSig;
+
+            if (logSourceMode === 'live' && !logsPaused && document.getElementById('logAutoScrollChk').checked && expandedLogKey === null) {
+                const container = document.getElementById('logsScrollContainer');
+                container.scrollTop = container.scrollHeight;
             }
         }
 

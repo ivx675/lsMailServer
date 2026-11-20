@@ -242,7 +242,7 @@ namespace lsMailServer.Services
 
             Directory.Delete(userFolderPath,true);
 
-            _dbService.UpdateUserStorageUsage(userName, totalBytesFreed);
+            _dbService.UpdateUserStorageUsage(userName, -totalBytesFreed);
         }
 
         #endregion
@@ -433,7 +433,9 @@ namespace lsMailServer.Services
 
             var matchingUids = new List<long>();
 
-            using var cmd = GetFolderCacheConnection(userFolderDirectory).CreateCommand();
+            var connection = GetFolderCacheConnection(userFolderDirectory);
+
+            using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddRange(parameters.ToArray());
 

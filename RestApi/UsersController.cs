@@ -134,7 +134,7 @@ namespace lsMailServer.RestApi
         /// </returns>
         [HttpGet("{userName}")]
         [Authorize]
-        public ActionResult<UserInfo> GetUser(string userName)
+        public ActionResult<UserDto> GetUser(string userName)
         {
             var user = _dbService.GetUser(userName);
             if (user == null) {

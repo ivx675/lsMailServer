@@ -1,23 +1,27 @@
-﻿using lsMailServer.Services;
-using Microsoft.AspNetCore.Authentication.Cookies; 
+﻿using lsMailServer.Logging;
+using lsMailServer.RestApi;
+using lsMailServer.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using System.Security.Cryptography.X509Certificates;
 
-namespace lsMailServer 
+namespace lsMailServer
 {
-    internal class Program 
+    internal class Program
     {
         static async Task Main(string[] args)
-        {            
+        {
             var builder = WebApplication.CreateBuilder(args);
 
             // 1. Establish the isolated instance Data root
             string baseDir = AppContext.BaseDirectory;
             string dataDir = Path.Combine(baseDir, "Data");
-            string mailStoreDir = Path.Combine(baseDir, "Data", "MailStore");
+            string mailStoreDir = Path.Combine(dataDir, "MailStore");
+            string logsDir = Path.Combine(dataDir, "Logs");
 
             Directory.CreateDirectory(dataDir);
             Directory.CreateDirectory(Path.Combine(dataDir, "Certificates"));
             Directory.CreateDirectory(Path.Combine(dataDir, "MailStore", "Mailboxes"));
+            Directory.CreateDirectory(logsDir);
 
             // 2. Load appsettings.json directly from inside the Data directory
             builder.Configuration
@@ -28,20 +32,33 @@ namespace lsMailServer
             builder.Services.AddWindowsService();
             builder.Services.AddSystemd();
 
-            // 4. Pass the data directory path into your database initializer
+            // 4. Register logging buffer, reader, writer, and ILoggerProvider
+            int liveBufferCapacity = builder.Configuration.GetValue("LoggingSettings:LiveBufferCapacity", 500);
+            string configuredLogsDir = builder.Configuration["LoggingSettings:LogDirectory"] ?? logsDir;
+
+            builder.Services.AddSingleton<ILiveLogBuffer>(_ => new LiveLogBuffer(liveBufferCapacity));
+            builder.Services.AddSingleton<IStoredLogReader>(_ => new StoredLogReader(configuredLogsDir));
+            builder.Services.AddSingleton<IStoredLogWriter>(_ => new StoredLogWriter(configuredLogsDir));
+            builder.Services.AddSingleton<ILoggerProvider>(sp =>
+                new CustomLogProvider(
+                    sp.GetRequiredService<ILiveLogBuffer>(),
+                    sp.GetRequiredService<IStoredLogWriter>()
+                ));
+
+            // 5. Register core data, storage, relay, and mail server hosted services
             builder.Services.AddSingleton(new DatabaseService(dataDir));
             builder.Services.AddSingleton(sp => new MailStoreService(sp.GetRequiredService<DatabaseService>(), mailStoreDir));
-            builder.Services.AddSingleton<SmtpRelayService>(sp => 
+            builder.Services.AddSingleton<SmtpRelayService>(sp =>
                 new SmtpRelayService(
                     sp.GetRequiredService<ILogger<SmtpRelayService>>(),
                     sp.GetRequiredService<IConfiguration>(),
                     mailStoreDir
-                ));            
+                ));
             builder.Services.AddHostedService(sp => sp.GetRequiredService<SmtpRelayService>());
             builder.Services.AddSingleton<MailServerHostedService>();
             builder.Services.AddHostedService(sp => sp.GetRequiredService<MailServerHostedService>());
 
-            // 5. Register Cookie Authentication
+            // 6. Register Cookie Authentication
             builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
                 .AddCookie(options =>
                 {
@@ -62,29 +79,30 @@ namespace lsMailServer
 
             builder.Services.AddAuthorization();
 
-            // 6. Register Controllers, API Explorer, and Swagger Generation
+            // 7. Register Controllers, API Explorer, and Swagger Generation
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
-            builder.Services.AddSwaggerGen(options => {
-                options.IncludeXmlComments(Path.Combine(baseDir,"lsMailServer.xml"));
+            builder.Services.AddSwaggerGen(options =>
+            {
+                options.IncludeXmlComments(Path.Combine(baseDir, "lsMailServer.xml"));
             });
 
             var app = builder.Build();
 
-            // 7. Enable Swagger middleware 
+            // 8. Enable Swagger middleware
             app.UseSwagger();
             app.UseSwaggerUI();
 
-            // 8. Enable static files if you host your web UI in wwwroot
+            // 9. Enable static files if you host your web UI in wwwroot
             app.UseDefaultFiles();
             app.UseStaticFiles();
 
-            // 9. Enable Authentication & Authorization middleware (CRITICAL: Must be before MapControllers)
+            // 10. Enable Authentication & Authorization middleware (CRITICAL: Must be before MapControllers)
             app.UseAuthentication();
             app.UseAuthorization();
 
-            // 10. Map route endpoints for your controllers
+            // 11. Map route endpoints for your controllers
             app.MapControllers();
 
             await app.RunAsync();
