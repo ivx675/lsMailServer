@@ -287,8 +287,7 @@ namespace lsMailServer.Services
         #region method DeleteDomain
 
         /// <summary>
-        /// Deletes a domain from the database by its unique name (normalized via Trim and ToLowerInvariant). 
-        /// Cascades to delete associated users and mailboxes depending on foreign key constraints.
+        /// Deletes a domain from the database by its unique name (normalized via Trim and ToLowerInvariant).
         /// </summary>
         /// <param name="domainName">The name of the domain to delete.</param>
         /// <returns>True if at least one row was successfully deleted; otherwise, false.</returns>
@@ -506,6 +505,7 @@ namespace lsMailServer.Services
         /// <param name="userName">The primary username or account handle.</param>
         /// <param name="rawPassword">The plaintext password to be securely hashed and salted.</param>
         /// <param name="description">Optional notes or description for the user account.</param>
+        /// <param name="enabled">The updated active status, or null to leave unchanged.</param>
         /// <param name="quotaMailboxSize">The maximum allowed mailbox size quota in bytes.</param>
         /// <param name="quotaMaxDailySends">The maximum number of outgoing emails permitted per day.</param>
         /// <returns>
@@ -515,7 +515,8 @@ namespace lsMailServer.Services
         public long CreateUser(
             string userName, 
             string rawPassword, 
-            string? description, 
+            string? description,
+            bool enabled, 
             long quotaMailboxSize, 
             int quotaMaxDailySends)
         {
@@ -551,6 +552,7 @@ namespace lsMailServer.Services
                 cmd.Parameters.AddWithValue("@passwordHash", passwordHash);
                 cmd.Parameters.AddWithValue("@passwordSalt", passwordSalt);
                 cmd.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@enabled", enabled);
                 cmd.Parameters.AddWithValue("@quotaSize", quotaMailboxSize);
                 cmd.Parameters.AddWithValue("@maxDailySends", quotaMaxDailySends);
                 cmd.Parameters.AddWithValue("@quotaDate", today);

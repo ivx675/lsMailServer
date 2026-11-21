@@ -1,3 +1,5 @@
 <Solution>
-  <Project Path="lsMailServer.csproj" />
+  <Folder Name="/src/">
+    <Project Path="src/lsMailServer/lsMailServer.csproj" />
+  </Folder>
 </Solution>

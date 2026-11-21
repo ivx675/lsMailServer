@@ -9,6 +9,7 @@ namespace lsMailServer.RestApi
     /// </summary>
     [ApiController]
     [Route("api/users")]
+    [Authorize]
     public class UsersController : ControllerBase
     {
         #region Dto and Request types
@@ -102,7 +103,6 @@ namespace lsMailServer.RestApi
         /// <param name="search">Optional search query to filter users by username or email address.</param>
         /// <returns>An HTTP 200 OK response containing a collection of user data transfer objects.</returns>
         [HttpGet]
-        [Authorize]
         public ActionResult<IEnumerable<UserDto>> GetUsers([FromQuery] string? search = null)
         {
             var retVal = _dbService.GetUsers(search)
@@ -133,7 +133,6 @@ namespace lsMailServer.RestApi
         /// otherwise, an HTTP 404 Not Found response if the user does not exist.
         /// </returns>
         [HttpGet("{userName}")]
-        [Authorize]
         public ActionResult<UserDto> GetUser(string userName)
         {
             var user = _dbService.GetUser(userName);
@@ -168,7 +167,6 @@ namespace lsMailServer.RestApi
         /// or an HTTP 409 Conflict if the username already exists.
         /// </returns>
         [HttpPost]
-        [Authorize]
         public ActionResult<UserDto> CreateUser([FromBody] CreateUserRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.UserName)) {
@@ -184,6 +182,7 @@ namespace lsMailServer.RestApi
                 normalizedUserName,
                 request.Password,
                 request.Description?.Trim(),
+                request.IsEnabled,
                 request.StorageQuotaBytes,
                 request.MaxDailySends
             );
@@ -227,7 +226,6 @@ namespace lsMailServer.RestApi
         /// or an HTTP 404 Not Found if the user does not exist.
         /// </returns>
         [HttpPut("{userId}")]
-        [Authorize]
         public IActionResult UpdateUser(string userId, [FromBody] UpdateUserRequest request)
         {
             // Safely parse string ID back to long for the database service
@@ -261,7 +259,6 @@ namespace lsMailServer.RestApi
         /// or an HTTP 404 Not Found if the user does not exist.
         /// </returns>
         [HttpDelete("{userId}")]
-        [Authorize]
         public IActionResult DeleteUser(string userId)
         {
             // Safely parse string ID back to long for the database service
@@ -288,7 +285,6 @@ namespace lsMailServer.RestApi
         /// or an HTTP 409 Conflict if the email address already exists.
         /// </returns>
         [HttpPost("{userId}/emails")]
-        [Authorize]
         public IActionResult CreateEmailAddress(string userId, [FromBody] CreateEmailAddressRequest request)
         {
             // Safely parse string ID back to long for the database service
@@ -320,7 +316,6 @@ namespace lsMailServer.RestApi
         /// or an HTTP 404 Not Found if the email address is not associated with the user.
         /// </returns>
         [HttpDelete("{userId}/emails")]
-        [Authorize]
         public IActionResult RemoveEmailAddress(string userId, [FromBody] CreateEmailAddressRequest request)
         {
             // Safely parse string ID back to long for the database service
