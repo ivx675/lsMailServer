@@ -144,16 +144,25 @@ namespace lsMailServer.RestApi
         /// <summary>
         /// Parses a log level query string into a nullable <see cref="LogLevel"/> filter value.
         /// </summary>
-        /// <param name="value">The raw log level string from the query parameter (such as <c>"All"</c>, <c>"Warning"</c>, 
-        /// or <c>"Error"</c>).</param>
-        /// <returns><see langword="null"/> when no level filter or <c>"All"</c> is specified; 
-        /// otherwise the parsed <see cref="LogLevel"/>, or <see cref="LogLevel.Information"/> if unrecognized.</returns>
+        /// <param name="value">
+        /// The raw log level string from the query parameter (such as <c>"All"</c>, <c>"Information"</c>,
+        /// <c>"Warning"</c>, or <c>"Error"</c>).
+        /// </param>
+        /// <returns>
+        /// <see langword="null"/> when <c>"All"</c> is specified; otherwise the parsed <see cref="LogLevel"/>,
+        /// or <see cref="LogLevel.Information"/> when omitted, empty, or unrecognized.
+        /// </returns>
         private static LogLevel? ParseLogLevel(string? value)
         {
-            if (string.IsNullOrWhiteSpace(value) || value.Equals("All", StringComparison.OrdinalIgnoreCase))
-                return null;
+            if (string.IsNullOrWhiteSpace(value)) {
+                return LogLevel.Information;
+            }
 
-            return Enum.TryParse<LogLevel>(value, ignoreCase: true, out var parsed)
+            if (value.Equals("All", StringComparison.OrdinalIgnoreCase)) {
+                return null;
+            }
+
+            return Enum.TryParse<LogLevel>(value, ignoreCase: true, out LogLevel parsed)
                 ? parsed
                 : LogLevel.Information;
         }

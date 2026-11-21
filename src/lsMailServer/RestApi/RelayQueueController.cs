@@ -8,7 +8,8 @@ namespace lsMailServer.RestApi
     /// Provides REST API endpoints for inspecting and managing outbound messages in the SMTP relay queue.
     /// </summary>
     [ApiController]
-    [Route("api/relay-queue")]
+    [Route("api/relay-queue")]    
+    [Authorize]
     public sealed class RelayQueueController : ControllerBase
     {
         /// <summary>
@@ -46,7 +47,6 @@ namespace lsMailServer.RestApi
         /// objects representing the deferred messages in the relay queue.
         /// </returns>
         [HttpGet]
-        [Authorize]
         public ActionResult<IReadOnlyList<RelayQueueItemDto>> GetQueue()
         {
             return Ok(_relayService.GetQueuedItems());

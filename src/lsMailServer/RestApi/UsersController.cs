@@ -1,6 +1,7 @@
 ﻿using lsMailServer.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Globalization;
 
 namespace lsMailServer.RestApi 
 {
@@ -85,13 +86,13 @@ namespace lsMailServer.RestApi
 
         #endregion
 
-        private readonly DatabaseService _dbService;
+        private readonly IDatabaseService _dbService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="UsersController"/> class.
         /// </summary>
         /// <param name="dbService">The database service used for user data persistence and queries.</param>
-        public UsersController(DatabaseService dbService)
+        public UsersController(IDatabaseService dbService)
         {
             _dbService = dbService;
         }
@@ -101,11 +102,16 @@ namespace lsMailServer.RestApi
         /// Retrieves a list of all mail server user accounts, with optional filtering by search term.
         /// </summary>
         /// <param name="search">Optional search query to filter users by username or email address.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>An HTTP 200 OK response containing a collection of user data transfer objects.</returns>
         [HttpGet]
-        public ActionResult<IEnumerable<UserDto>> GetUsers([FromQuery] string? search = null)
+        public async Task<ActionResult<IEnumerable<UserDto>>> GetUsers(
+            [FromQuery] string? search = null,
+            CancellationToken cancellationToken = default)
         {
-            var retVal = _dbService.GetUsers(search)
+            var users = await _dbService.GetUsersAsync(search, cancellationToken);
+
+            var retVal = users
                 .Select(user => new UserDto(
                     UserId: user.UserId.ToString(),
                     UserName: user.UserName,
@@ -128,14 +134,15 @@ namespace lsMailServer.RestApi
         /// Retrieves a specific user account by its username.
         /// </summary>
         /// <param name="userName">The primary username or account handle to look up.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 200 OK response containing the <see cref="UserInfo"/> details if found; 
+        /// An HTTP 200 OK response containing the <see cref="UserDto"/> details if found;
         /// otherwise, an HTTP 404 Not Found response if the user does not exist.
         /// </returns>
         [HttpGet("{userName}")]
-        public ActionResult<UserDto> GetUser(string userName)
+        public async Task<ActionResult<UserDto>> GetUser(string userName, CancellationToken cancellationToken = default)
         {
-            var user = _dbService.GetUser(userName);
+            var user = await _dbService.GetUserAsync(userName, cancellationToken);
             if (user == null) {
                 return NotFound(new { error = "User not found." });
             }
@@ -161,13 +168,16 @@ namespace lsMailServer.RestApi
         /// Creates a new mail server user account.
         /// </summary>
         /// <param name="request">The payload containing the user's account details and credentials.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 201 Created response containing the newly created user's <see cref="UserDto"/> if successful; 
-        /// an HTTP 400 Bad Request if required fields are missing; 
+        /// An HTTP 201 Created response containing the newly created user's <see cref="UserDto"/> if successful;
+        /// an HTTP 400 Bad Request if required fields are missing;
         /// or an HTTP 409 Conflict if the username already exists.
         /// </returns>
         [HttpPost]
-        public ActionResult<UserDto> CreateUser([FromBody] CreateUserRequest request)
+        public async Task<ActionResult<UserDto>> CreateUser(
+            [FromBody] CreateUserRequest request,
+            CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(request.UserName)) {
                 return BadRequest(new { error = "User name cannot be empty." });
@@ -178,21 +188,21 @@ namespace lsMailServer.RestApi
 
             string normalizedUserName = request.UserName.Trim().ToLowerInvariant();
 
-            long userId = _dbService.CreateUser(
+            long userId = await _dbService.CreateUserAsync(
                 normalizedUserName,
                 request.Password,
                 request.Description?.Trim(),
                 request.IsEnabled,
                 request.StorageQuotaBytes,
-                request.MaxDailySends
-            );
+                request.MaxDailySends,
+                cancellationToken);
 
             if (userId == -1) {
                 return Conflict(new { error = "User already exists." });
             }
 
             // Fetch the created user record
-            var createdUser = _dbService.GetUser(normalizedUserName);
+            var createdUser = await _dbService.GetUserAsync(normalizedUserName, cancellationToken);
             if (createdUser == null) {
                 return StatusCode(500, new { error = "User was created but could not be retrieved." });
             }
@@ -220,27 +230,31 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <param name="userId">The string representation of the unique 64-bit user ID from the route.</param>
         /// <param name="request">The payload containing the fields to update (unprovided or null fields remain unchanged).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 200 OK response with a success message if updated; 
-        /// an HTTP 400 Bad Request if the user ID format is invalid; 
+        /// An HTTP 200 OK response with a success message if updated;
+        /// an HTTP 400 Bad Request if the user ID format is invalid;
         /// or an HTTP 404 Not Found if the user does not exist.
         /// </returns>
         [HttpPut("{userId}")]
-        public IActionResult UpdateUser(string userId, [FromBody] UpdateUserRequest request)
+        public async Task<IActionResult> UpdateUser(
+            string userId,
+            [FromBody] UpdateUserRequest request,
+            CancellationToken cancellationToken = default)
         {
             // Safely parse string ID back to long for the database service
-            if (!long.TryParse(userId, out long parsedUserId)) {
+            if (!long.TryParse(userId, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedUserId)) {
                 return BadRequest(new { error = "Invalid User ID format." });
             }
 
-            bool updated = _dbService.UpdateUser(
+            bool updated = await _dbService.UpdateUserAsync(
                 parsedUserId,
                 request.Password,
                 request.Description?.Trim(),
                 request.IsEnabled,
                 request.StorageQuotaBytes,
-                request.MaxDailySends
-            );
+                request.MaxDailySends,
+                cancellationToken);
 
             if (!updated) {
                 return NotFound(new { error = "User not found or update failed." });
@@ -253,22 +267,23 @@ namespace lsMailServer.RestApi
         /// Deletes an existing user account and all of its associated email addresses.
         /// </summary>
         /// <param name="userId">The string representation of the unique 64-bit user ID from the route.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 204 No Content response if the deletion is successful; 
-        /// an HTTP 400 Bad Request if the user ID format is invalid; 
+        /// An HTTP 204 No Content response if the deletion is successful;
+        /// an HTTP 400 Bad Request if the user ID format is invalid;
         /// or an HTTP 404 Not Found if the user does not exist.
         /// </returns>
         [HttpDelete("{userId}")]
-        public IActionResult DeleteUser(string userId)
+        public async Task<IActionResult> DeleteUser(string userId, CancellationToken cancellationToken = default)
         {
             // Safely parse string ID back to long for the database service
-            if (!long.TryParse(userId, out long parsedUserId)) {
+            if (!long.TryParse(userId, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedUserId)) {
                 return BadRequest(new { error = "Invalid User ID format." });
             }
 
-            bool deleted = _dbService.DeleteUser(parsedUserId, out string error);
-            if (!deleted) {
-                return NotFound(new { error = error });
+            string? error = await _dbService.DeleteUserAsync(parsedUserId, cancellationToken);
+            if (error is not null) {
+                return NotFound(new { error });
             }
 
             return NoContent();
@@ -279,27 +294,32 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <param name="userId">The string representation of the unique 64-bit user ID from the route.</param>
         /// <param name="request">The payload containing the email address to add.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 200 OK response with a success message if added; 
-        /// an HTTP 400 Bad Request if the user ID format is invalid or the email is empty; 
-        /// or an HTTP 409 Conflict if the email address already exists.
+        /// An HTTP 200 OK response with a success message if added;
+        /// an HTTP 400 Bad Request if the user ID format is invalid or the email is empty;
+        /// or an HTTP 409 Conflict if the email address already exists or validation fails.
         /// </returns>
         [HttpPost("{userId}/emails")]
-        public IActionResult CreateEmailAddress(string userId, [FromBody] CreateEmailAddressRequest request)
+        public async Task<IActionResult> CreateEmailAddress(
+            string userId,
+            [FromBody] CreateEmailAddressRequest request,
+            CancellationToken cancellationToken = default)
         {
             // Safely parse string ID back to long for the database service
-            if (!long.TryParse(userId, out long parsedUserId)) {
+            if (!long.TryParse(userId, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedUserId)) {
                 return BadRequest(new { error = "Invalid User ID format." });
             }
-            if (string.IsNullOrWhiteSpace(request.EmailAddress)) {
+
+            if (request is null || string.IsNullOrWhiteSpace(request.EmailAddress)) {
                 return BadRequest(new { error = "Email address cannot be empty." });
             }
 
             string normalizedEmail = request.EmailAddress.Trim().ToLowerInvariant();
 
-            bool added = _dbService.CreateEmailAddress(parsedUserId, normalizedEmail, out string error);
-            if (!added) {
-                return Conflict(new { error = error });
+            string? error = await _dbService.CreateEmailAddressAsync(parsedUserId, normalizedEmail, cancellationToken);
+            if (error is not null) {
+                return Conflict(new { error });
             }
 
             return Ok(new { message = "Email address added successfully.", emailAddress = normalizedEmail });
@@ -310,27 +330,32 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <param name="userId">The string representation of the unique 64-bit user ID from the route.</param>
         /// <param name="request">The payload containing the email address to remove.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An HTTP 204 No Content response if successfully removed; 
-        /// an HTTP 400 Bad Request if the user ID format is invalid or the email is empty; 
+        /// An HTTP 204 No Content response if successfully removed;
+        /// an HTTP 400 Bad Request if the user ID format is invalid or the email is empty;
         /// or an HTTP 404 Not Found if the email address is not associated with the user.
         /// </returns>
         [HttpDelete("{userId}/emails")]
-        public IActionResult RemoveEmailAddress(string userId, [FromBody] CreateEmailAddressRequest request)
+        public async Task<IActionResult> RemoveEmailAddress(
+            string userId,
+            [FromBody] CreateEmailAddressRequest request,
+            CancellationToken cancellationToken = default)
         {
             // Safely parse string ID back to long for the database service
-            if (!long.TryParse(userId, out long parsedUserId)) {
+            if (!long.TryParse(userId, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedUserId)) {
                 return BadRequest(new { error = "Invalid User ID format." });
             }
-            if (string.IsNullOrWhiteSpace(request.EmailAddress)) {
+
+            if (request is null || string.IsNullOrWhiteSpace(request.EmailAddress)) {
                 return BadRequest(new { error = "Email address cannot be empty." });
             }
 
             string normalizedEmail = request.EmailAddress.Trim().ToLowerInvariant();
 
-            bool removed = _dbService.DeleteEmailAddress(parsedUserId, normalizedEmail, out _);
-            if (!removed) {
-                return NotFound(new { error = "Email address not found for this user." });
+            string? error = await _dbService.DeleteEmailAddressAsync(parsedUserId, normalizedEmail, cancellationToken);
+            if (error is not null) {
+                return NotFound(new { error });
             }
 
             return NoContent();

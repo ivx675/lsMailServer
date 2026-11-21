@@ -1,8 +1,6 @@
 ﻿using lsMailServer.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using static lsMailServer.RestApi.UsersController;
-using static lsMailServer.Services.DatabaseService;
 
 namespace lsMailServer.RestApi 
 {
@@ -11,6 +9,7 @@ namespace lsMailServer.RestApi
     /// </summary>
     [ApiController]
     [Route("api/domains")]
+    [Authorize]
     public class DomainsController : ControllerBase
     { 
         /// <summary>
@@ -36,13 +35,13 @@ namespace lsMailServer.RestApi
         /// <param name="IsEnabled">Indicates whether mail routing should be active for this domain.</param>
         public record UpdateDomainRequest(string? Description, bool IsEnabled);
 
-        private readonly DatabaseService _dbService;
+        private readonly IDatabaseService _dbService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="DomainsController"/> class.
         /// </summary>
         /// <param name="dbService">The database service used for domain operations.</param>
-        public DomainsController(DatabaseService dbService)
+        public DomainsController(IDatabaseService dbService)
         {
             _dbService = dbService;
         }
@@ -53,13 +52,18 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <param name="isEnabled">Optional filter to include only enabled or disabled domains.</param>
         /// <param name="search">Optional search term to filter domains by name.</param>
-        /// <returns>An enumerable collection of <see cref="DomainDto"/> objects.</returns>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>A list of <see cref="DomainDto"/> objects.</returns>
         [HttpGet]
-        [Authorize]
         [ProducesResponseType(typeof(IEnumerable<DomainDto>), StatusCodes.Status200OK)]
-        public IActionResult GetDomains([FromQuery] bool? isEnabled = null, [FromQuery] string? search = null)
+        public async Task<IActionResult> GetDomains(
+            [FromQuery] bool? isEnabled = null,
+            [FromQuery] string? search = null,
+            CancellationToken cancellationToken = default)
         {
-            var retVal = _dbService.GetDomains(isEnabled, search)
+            var domains = await _dbService.GetDomainsAsync(isEnabled, search, cancellationToken);
+
+            var retVal = domains
                 .Select(domain => new DomainDto(
                     Name: domain.Name,
                     Description: domain.Description,
@@ -74,19 +78,19 @@ namespace lsMailServer.RestApi
         /// Retrieves a specific mail domain by its name.
         /// </summary>
         /// <param name="domainName">The domain name to retrieve.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>The domain details if found; otherwise, a 404 Not Found response.</returns>
         [HttpGet("{domainName}")]
-        [Authorize]
         [ProducesResponseType(typeof(DomainDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public IActionResult GetDomain(string domainName)
+        public async Task<IActionResult> GetDomain(string domainName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(domainName)) {
                 return BadRequest(new { error = "Domain name cannot be empty." });
             }
 
-            var domain = _dbService.GetDomain(domainName.Trim().ToLowerInvariant());
+            var domain = await _dbService.GetDomainAsync(domainName.Trim().ToLowerInvariant(), cancellationToken);
             if (domain == null) {
                 return NotFound(new { error = "Domain not found." });
             }
@@ -100,13 +104,13 @@ namespace lsMailServer.RestApi
         /// Creates a new mail domain.
         /// </summary>
         /// <param name="request">The domain creation payload.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>The created domain details.</returns>
         [HttpPost]
-        [Authorize]
         [ProducesResponseType(StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
-        public IActionResult CreateDomain([FromBody] CreateDomainRequest request)
+        public async Task<IActionResult> CreateDomain([FromBody] CreateDomainRequest request, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(request.DomainName)) {
                 return BadRequest(new { error = "Domain name cannot be empty." });
@@ -114,16 +118,15 @@ namespace lsMailServer.RestApi
 
             var normalizedDomainName = request.DomainName.Trim().ToLowerInvariant();
             var trimmedDescription = request.Description?.Trim();
+            var isEnabled = request.IsEnabled;
 
-            bool added = _dbService.CreateDomain(normalizedDomainName, trimmedDescription);
+            bool added = await _dbService.CreateDomainAsync(normalizedDomainName, trimmedDescription, isEnabled, cancellationToken); 
             if (!added) {
                 return Conflict(new { error = "Domain already exists." });
             }
 
             var createdDto = new DomainDto(normalizedDomainName, trimmedDescription, request.IsEnabled);
 
-            // Ensure you have an action named "GetDomain" (taking a domainName route parameter) 
-            // for proper resource location headers, or point to your lookup route.
             return CreatedAtAction(nameof(GetDomain), new { domainName = normalizedDomainName }, createdDto);
         }
         
@@ -132,13 +135,16 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <param name="domainName">The name of the domain to update.</param>
         /// <param name="request">The update payload containing the new description and enabled status.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>The updated domain details if successful; otherwise, a 404 Not Found response.</returns>
         [HttpPut("{domainName}")]
-        [Authorize]
         [ProducesResponseType(typeof(DomainDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public IActionResult UpdateDomain(string domainName, [FromBody] UpdateDomainRequest request)
+        public async Task<IActionResult> UpdateDomain(
+            string domainName,
+            [FromBody] UpdateDomainRequest request,
+            CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(domainName)) {
                 return BadRequest(new { error = "Domain name cannot be empty." });
@@ -147,17 +153,18 @@ namespace lsMailServer.RestApi
             var normalizedDomainName = domainName.Trim().ToLowerInvariant();
             var trimmedDescription = request.Description?.Trim();
 
-            bool updated = _dbService.UpdateDomain(
-                normalizedDomainName, 
+            bool updated = await _dbService.UpdateDomainAsync(
+                normalizedDomainName,
                 trimmedDescription,
-                request.IsEnabled
-            );
+                request.IsEnabled,
+                cancellationToken);
 
             if (!updated) {
                 return NotFound(new { error = "Domain not found." });
             }
 
             var updatedDto = new DomainDto(normalizedDomainName, trimmedDescription, request.IsEnabled);
+
             return Ok(updatedDto);
         }
 
@@ -165,19 +172,19 @@ namespace lsMailServer.RestApi
         /// Deletes an existing mail domain.
         /// </summary>
         /// <param name="domainName">The name of the domain to delete.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>A 204 No Content response if successful; otherwise, a 404 Not Found or 400 Bad Request.</returns>
         [HttpDelete("{domainName}")]
-        [Authorize]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public IActionResult DeleteDomain(string domainName)
+        public async Task<IActionResult> DeleteDomain(string domainName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(domainName)) {
                 return BadRequest(new { error = "Domain name cannot be empty." });
             }
 
-            bool deleted = _dbService.DeleteDomain(domainName.Trim().ToLowerInvariant());
+            bool deleted = await _dbService.DeleteDomainAsync(domainName.Trim().ToLowerInvariant(), cancellationToken);
             if (!deleted) {
                 return NotFound(new { error = "Domain not found." });
             }

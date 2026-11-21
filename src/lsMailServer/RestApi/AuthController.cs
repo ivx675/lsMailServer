@@ -35,7 +35,7 @@ namespace lsMailServer.RestApi
         }
 
         /// <summary>
-        /// Authenticates an administrator against the database and issues a secure, 
+        /// Authenticates an user against the database and issues a secure, 
         /// encrypted cookie-based session ticket.
         /// </summary>
         /// <param name="req">The login request payload containing the username and password.</param>

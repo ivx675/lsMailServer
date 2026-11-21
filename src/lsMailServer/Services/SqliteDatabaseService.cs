@@ -12,7 +12,7 @@ namespace lsMailServer.Services
     /// <summary>
     /// Manages SQLite database operations, connection provisioning, and data persistence for the application.
     /// </summary>
-    public class DatabaseService
+    public class SqliteDatabaseService : IDatabaseService
     {
         private readonly string _connectionString;
         private const int SaltSize = 16; // 128-bit
@@ -20,11 +20,11 @@ namespace lsMailServer.Services
         private const int Iterations = 100_000;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="DatabaseService"/> class, 
+        /// Initializes a new instance of the <see cref="SqliteDatabaseService"/> class,
         /// configuring the physical directory path where SQLite database files are stored.
         /// </summary>
         /// <param name="dataDirectory">The directory path where database files and local metadata caches are persisted.</param>
-        public DatabaseService(string dataDirectory)
+        public SqliteDatabaseService(string dataDirectory)
         {
             // Path to the per-instance SQLite database
             string dbPath = Path.Combine(dataDirectory, "mailserver.db");
@@ -36,7 +36,11 @@ namespace lsMailServer.Services
 
         #region method CreateConnection
 
-        internal SqliteConnection CreateConnection()
+        /// <summary>
+        /// Opens a new SQLite connection using the configured connection string and applies baseline connection pragmas.
+        /// </summary>
+        /// <returns>An open <see cref="SqliteConnection"/> with foreign keys enabled, WAL journaling, and normal synchronous mode.</returns>
+        private SqliteConnection CreateConnection()
         {
             var connection = new SqliteConnection(_connectionString);
             connection.Open();
@@ -57,6 +61,9 @@ namespace lsMailServer.Services
 
         #region method EnsureDatabaseCreated
 
+        /// <summary>
+        /// Ensures that the required database tables and indexes exist for domains, users, and user email addresses.
+        /// </summary>
         private void EnsureDatabaseCreated()
         {
             using var connection = CreateConnection();
@@ -104,29 +111,28 @@ namespace lsMailServer.Services
         #endregion
 
                 
-        #region method GetDomains
+        #region method GetDomainsAsync
 
         /// <summary>
-        /// Retrieves mail domains from the database with optional filtering.
+        /// Asynchronously retrieves mail domains from the database with optional filtering.
         /// </summary>
         /// <param name="isEnabled">Optional enabled status filter.</param>
         /// <param name="search">Optional domain name search string.</param>
-        /// <returns>An enumerable collection of matching <see cref="DomainInfo"/> objects.</returns>
-        public IEnumerable<DomainInfo> GetDomains(bool? isEnabled = null, string? search = null)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>A list of matching <see cref="DomainInfo"/> objects ordered by domain name.</returns>
+        public async Task<List<DomainInfo>> GetDomainsAsync(bool? isEnabled = null, string? search = null, CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             var sql = new StringBuilder("SELECT DomainName, Description, Enabled FROM Domains WHERE 1=1");
-    
-            if (isEnabled.HasValue)
-            {
+
+            if (isEnabled.HasValue) {
                 sql.Append(" AND Enabled = @isEnabled");
                 cmd.Parameters.AddWithValue("@isEnabled", isEnabled.Value ? 1 : 0);
             }
 
-            if (!string.IsNullOrWhiteSpace(search))
-            {
+            if (!string.IsNullOrWhiteSpace(search)) {
                 sql.Append(" AND DomainName LIKE @search");
                 cmd.Parameters.AddWithValue("@search", $"%{search.Trim().ToLowerInvariant()}%");
             }
@@ -134,11 +140,10 @@ namespace lsMailServer.Services
             sql.Append(" ORDER BY DomainName ASC;");
             cmd.CommandText = sql.ToString();
 
-            using var reader = cmd.ExecuteReader();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             var domains = new List<DomainInfo>();
 
-            while (reader.Read())
-            {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                 domains.Add(new DomainInfo(
                     Name: reader.GetString(0),
                     Description: reader.IsDBNull(1) ? null : reader.GetString(1),
@@ -151,24 +156,24 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method GetDomain
+        #region method GetDomainAsync
 
         /// <summary>
-        /// Retrieves a single mail domain by its name from the database.
+        /// Asynchronously retrieves a single mail domain by its name from the database.
         /// </summary>
         /// <param name="domainName">The normalized domain name.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>A <see cref="DomainInfo"/> if found; otherwise, <c>null</c>.</returns>
-        public DomainInfo? GetDomain(string domainName)
+        public async Task<DomainInfo?> GetDomainAsync(string domainName, CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = "SELECT DomainName, Description, Enabled FROM Domains WHERE DomainName = @domainName;";
-            cmd.Parameters.AddWithValue("@domainName", domainName);
+            cmd.Parameters.AddWithValue("@domainName", domainName.Trim().ToLowerInvariant());
 
-            using var reader = cmd.ExecuteReader();
-            if (reader.Read())
-            {
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                 return new DomainInfo(
                     Name: reader.GetString(0),
                     Description: reader.IsDBNull(1) ? null : reader.GetString(1),
@@ -181,17 +186,18 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method DomainExists
+        #region method DomainExistsAsync
 
         /// <summary>
-        /// Checks if a domain exists in the database and is currently enabled.
+        /// Asynchronously checks if a domain exists in the database and is currently enabled.
         /// </summary>
         /// <param name="domainName">The name of the domain to check (normalized via Trim and ToLowerInvariant).</param>
-        /// <returns>True if the domain exists and Enabled = 1; otherwise, false.</returns>
-        public bool DomainExists(string domainName)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns><c>true</c> if the domain exists and is enabled; otherwise, <c>false</c>.</returns>
+        public async Task<bool> DomainExistsAsync(string domainName, CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
                 SELECT COUNT(1) 
@@ -200,27 +206,31 @@ namespace lsMailServer.Services
             ";
             cmd.Parameters.AddWithValue("@domainName", domainName.Trim().ToLowerInvariant());
 
-            long count = (long)(cmd.ExecuteScalar() ?? 0L);
+            object? result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            long count = result is null or DBNull ? 0L : Convert.ToInt64(result);
+
             return count > 0;
         }
 
         #endregion
 
-        #region method CreateDomain
+        #region method CreateDomainAsync
 
         /// <summary>
-        /// Creates a new domain record using the normalized domain name as the primary key.
+        /// Asynchronously creates a new domain record using the normalized domain name as the primary key.
         /// </summary>
         /// <param name="domainName">The target domain name (e.g., example.com). Will be trimmed and normalized to lowercase.</param>
         /// <param name="description">Optional human-readable notes or organizational description for the domain.</param>
+        /// <param name="isEnabled">Indicates whether the domain routing is active (<see langword="true"/> for 1, <see langword="false"/> for 0).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// <see langword="true"/> if the domain was successfully created; 
+        /// <see langword="true"/> if the domain was successfully created;
         /// <see langword="false"/> if the domain name already exists in the database.
         /// </returns>
         /// <exception cref="ArgumentNullException">Thrown if <paramref name="domainName"/> is null or whitespace.</exception>
-        public bool CreateDomain(string domainName, string? description = null)
+        public async Task<bool> CreateDomainAsync(string domainName, string? description, bool isEnabled, CancellationToken cancellationToken = default)
         {
-            if(string.IsNullOrWhiteSpace(domainName)) {
+            if (string.IsNullOrWhiteSpace(domainName)) {
                 throw new ArgumentNullException(nameof(domainName), "Domain name cannot be null or empty.");
             }
 
@@ -229,45 +239,47 @@ namespace lsMailServer.Services
 
             try {
                 using var connection = CreateConnection();
-                using var cmd = connection.CreateCommand();
+                await using var cmd = connection.CreateCommand();
 
                 cmd.CommandText = @"
                     INSERT INTO Domains (
-                        DomainName, Description, CreateDate
-                    ) 
+                        DomainName, Description, Enabled, CreateDate
+                    )
                     VALUES (
-                        @domainName, @description, @createDate
+                        @domainName, @description, @enabled, @createDate
                     );
                 ";
 
                 cmd.Parameters.AddWithValue("@domainName", normalizedDomain);
                 cmd.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@enabled", isEnabled ? 1 : 0);
                 cmd.Parameters.AddWithValue("@createDate", createDate);
 
-                cmd.ExecuteNonQuery();
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 return true;
             }
-            catch (SqliteException) {
-                // Unique constraint violation (DomainName already exists)
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19) {
+                // Unique/primary key constraint violation (DomainName already exists)
                 return false;
             }
         }
 
         #endregion
 
-        #region method UpdateDomain
+        #region method UpdateDomainAsync
 
         /// <summary>
-        /// Updates the description and active status of an existing domain identified by its name.
+        /// Asynchronously updates the description and active status of an existing domain identified by its name.
         /// </summary>
         /// <param name="domainName">The unique name of the domain to update (normalized via Trim and ToLowerInvariant).</param>
-        /// <param name="description">The updated description or notes, or null to clear it.</param>
-        /// <param name="isEnabled">Indicates whether the domain routing is active (true for 1, false for 0).</param>
-        /// <returns>True if at least one row was successfully updated; otherwise, false.</returns>
-        public bool UpdateDomain(string domainName, string? description, bool isEnabled)
+        /// <param name="description">The updated description or notes, or <see langword="null"/> to clear it.</param>
+        /// <param name="isEnabled">Indicates whether the domain routing is active (<see langword="true"/> for 1, <see langword="false"/> for 0).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns><see langword="true"/> if at least one row was successfully updated; otherwise, <see langword="false"/>.</returns>
+        public async Task<bool> UpdateDomainAsync(string domainName, string? description, bool isEnabled, CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
                 UPDATE Domains 
@@ -279,57 +291,62 @@ namespace lsMailServer.Services
             cmd.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@enabled", isEnabled ? 1 : 0);
 
-            return cmd.ExecuteNonQuery() > 0;
+            int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return affectedRows > 0;
         }
 
         #endregion
 
-        #region method DeleteDomain
+        #region method DeleteDomainAsync
 
         /// <summary>
-        /// Deletes a domain from the database by its unique name (normalized via Trim and ToLowerInvariant).
+        /// Asynchronously deletes a domain from the database by its unique name (normalized via Trim and ToLowerInvariant).
         /// </summary>
         /// <param name="domainName">The name of the domain to delete.</param>
-        /// <returns>True if at least one row was successfully deleted; otherwise, false.</returns>
-        public bool DeleteDomain(string domainName)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns><see langword="true"/> if at least one row was successfully deleted; otherwise, <see langword="false"/>.</returns>
+        public async Task<bool> DeleteDomainAsync(string domainName, CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = "DELETE FROM Domains WHERE DomainName = @name;";
             cmd.Parameters.AddWithValue("@name", domainName.Trim().ToLowerInvariant());
 
-            return cmd.ExecuteNonQuery() > 0;
+            int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            return affectedRows > 0;
         }
 
         #endregion
 
-        #region method GetUsers
+        #region method GetUsersAsync
 
         /// <summary>
-        /// Retrieves a collection of user accounts from the database, supporting optional search filtering 
+        /// Asynchronously retrieves a list of user accounts from the database, supporting optional search filtering
         /// by username or associated email addresses, and aggregates email aliases via a left join.
         /// </summary>
         /// <param name="search">An optional search query string to filter users by username or email address.</param>
-        /// <returns>An enumerable collection of <see cref="UserInfo"/> records representing matching user accounts.</returns>
-        public IEnumerable<UserInfo> GetUsers(string? search = null)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>A list of <see cref="UserInfo"/> records representing matching user accounts ordered by username.</returns>
+        public async Task<List<UserInfo>> GetUsersAsync(string? search = null, CancellationToken cancellationToken = default)
         {
             string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
             cmd.Parameters.AddWithValue("@today", todayStr);
 
-            var query = new System.Text.StringBuilder(@"
-                SELECT 
-                    u.UserId, 
-                    u.UserName, 
+            var query = new StringBuilder(@"
+                SELECT
+                    u.UserId,
+                    u.UserName,
                     u.Description,
-                    u.QuotaMailboxSize, 
+                    u.QuotaMailboxSize,
                     u.QuotaCurrentUsageBytes,
                     u.QuotaMaxDailySends,
                     CASE WHEN u.QuotaLastSendDate = @today THEN u.QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
-                    u.CreateDate, 
+                    u.CreateDate,
                     u.LastLoginDate,
                     u.Enabled,
                     GROUP_CONCAT(e.EmailAddress, ', ') AS AllEmails
@@ -338,9 +355,10 @@ namespace lsMailServer.Services
                 WHERE 1=1
             ");
 
-            if (!string.IsNullOrWhiteSpace(search)) {
+            if (!string.IsNullOrWhiteSpace(search))
+            {
                 query.Append(@" AND (
-                    u.UserName LIKE @search 
+                    u.UserName LIKE @search
                     OR u.UserId IN (SELECT UserId FROM UserEmailAddresses WHERE EmailAddress LIKE @search)
                 )");
                 cmd.Parameters.AddWithValue("@search", $"%{search.Trim().ToLowerInvariant()}%");
@@ -351,7 +369,7 @@ namespace lsMailServer.Services
 
             cmd.CommandText = query.ToString();
 
-            using var reader = cmd.ExecuteReader();
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             var users = new List<UserInfo>();
 
             // Cache ordinals for safety and performance
@@ -367,7 +385,8 @@ namespace lsMailServer.Services
             int ordEnabled = reader.GetOrdinal("Enabled");
             int ordAllEmails = reader.GetOrdinal("AllEmails");
 
-            while (reader.Read()) {
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
                 string emailsString = reader.IsDBNull(ordAllEmails) ? "" : reader.GetString(ordAllEmails);
                 var emailList = emailsString.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries).ToList();
 
@@ -391,17 +410,18 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method GetUser
+        #region method GetUserAsync
 
         /// <summary>
-        /// Retrieves an existing user record and their complete quota, status, and audit details by username.
+        /// Asynchronously retrieves an existing user record and their complete quota, status, and audit details by username.
         /// </summary>
         /// <param name="userName">The primary username or account handle to look up in the database.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// A <see cref="UserInfo"/> record containing the user's details and associated email addresses if found; 
-        /// otherwise, <c>null</c> if the user does not exist.
+        /// A <see cref="UserInfo"/> record containing the user's details and associated email addresses if found;
+        /// otherwise, <see langword="null"/> if the user does not exist.
         /// </returns>
-        public UserInfo? GetUser(string userName)
+        public async Task<UserInfo?> GetUserAsync(string userName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(userName))
                 return null;
@@ -409,23 +429,22 @@ namespace lsMailServer.Services
             string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
             using var connection = CreateConnection();
-            
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             // 1. Fetch the complete user details matching the GetUsers schema
             cmd.CommandText = @"
-                SELECT 
-                    UserId, 
-                    UserName, 
-                    Description, 
-                    Enabled, 
-                    QuotaMailboxSize, 
+                SELECT
+                    UserId,
+                    UserName,
+                    Description,
+                    Enabled,
+                    QuotaMailboxSize,
                     QuotaCurrentUsageBytes,
                     QuotaMaxDailySends,
                     CASE WHEN QuotaLastSendDate = @today THEN QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
                     CreateDate,
                     LastLoginDate
-                FROM Users 
+                FROM Users
                 WHERE UserName = @userName;
             ";
 
@@ -443,10 +462,8 @@ namespace lsMailServer.Services
             DateTime createDate;
             DateTime? lastLoginDate;
 
-            using (var reader = cmd.ExecuteReader())
-            {
-                if (!reader.Read())
-                {
+            await using (var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)) {
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                     return null;
                 }
 
@@ -464,18 +481,16 @@ namespace lsMailServer.Services
 
             // 2. Fetch all associated email addresses from UserEmailAddresses
             var emailAddresses = new List<string>();
-            using (var emailCmd = connection.CreateCommand())
-            {
+            await using (var emailCmd = connection.CreateCommand()) {
                 emailCmd.CommandText = @"
-                    SELECT EmailAddress 
-                    FROM UserEmailAddresses 
+                    SELECT EmailAddress
+                    FROM UserEmailAddresses
                     WHERE UserId = @userId;
                 ";
                 emailCmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", Microsoft.Data.Sqlite.SqliteType.Integer) { Value = userId });
 
-                using var emailReader = emailCmd.ExecuteReader();
-                while (emailReader.Read())
-                {
+                await using var emailReader = await emailCmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await emailReader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                     emailAddresses.Add(emailReader.GetString(0));
                 }
             }
@@ -497,52 +512,55 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method CreateUser
+        #region method CreateUserAsync
           
         /// <summary>
-        /// Creates a new user record in the database with secure password hashing and initial quota parameters.
+        /// Asynchronously creates a new user record in the database with secure password hashing and initial quota parameters.
         /// </summary>
         /// <param name="userName">The primary username or account handle.</param>
         /// <param name="rawPassword">The plaintext password to be securely hashed and salted.</param>
         /// <param name="description">Optional notes or description for the user account.</param>
-        /// <param name="enabled">The updated active status, or null to leave unchanged.</param>
+        /// <param name="enabled">Indicates whether the user account is initially enabled.</param>
         /// <param name="quotaMailboxSize">The maximum allowed mailbox size quota in bytes.</param>
         /// <param name="quotaMaxDailySends">The maximum number of outgoing emails permitted per day.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// The generated unique 64-bit user ID if creation succeeds; 
+        /// The generated unique 64-bit user ID if creation succeeds;
         /// otherwise, <c>-1</c> if a unique constraint violation (such as a duplicate username) occurs.
         /// </returns>
-        public long CreateUser(
-            string userName, 
-            string rawPassword, 
+        public async Task<long> CreateUserAsync(
+            string userName,
+            string rawPassword,
             string? description,
-            bool enabled, 
-            long quotaMailboxSize, 
-            int quotaMaxDailySends)
+            bool enabled,
+            long quotaMailboxSize,
+            int quotaMaxDailySends,
+            CancellationToken cancellationToken = default)
         {
-            long userId = ((long)RandomNumberGenerator.GetInt32(1, int.MaxValue) << 32) 
+            ArgumentException.ThrowIfNullOrWhiteSpace(userName);
+
+            long userId = ((long)RandomNumberGenerator.GetInt32(1, int.MaxValue) << 32)
                 | (uint)RandomNumberGenerator.GetInt32(int.MaxValue);
 
             HashPassword(rawPassword, out string passwordHash, out string passwordSalt);
-            string createDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            string createDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+            string today = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-            try
-            {
+            try {
                 using var connection = CreateConnection();
-                using var cmd = connection.CreateCommand();
+                await using var cmd = connection.CreateCommand();
 
                 cmd.CommandText = @"
                     INSERT INTO Users (
-                        UserId, UserName, PasswordHash, PasswordSalt, Enabled, 
-                        Description, QuotaMailboxSize, QuotaCurrentUsageBytes, 
-                        QuotaMaxDailySends, QuotaSentCountToday, 
+                        UserId, UserName, PasswordHash, PasswordSalt, Enabled,
+                        Description, QuotaMailboxSize, QuotaCurrentUsageBytes,
+                        QuotaMaxDailySends, QuotaSentCountToday,
                         QuotaLastSendDate, CreateDate
-                    ) 
+                    )
                     VALUES (
-                        @userId, @userName, @passwordHash, @passwordSalt, 1, 
-                        @description, @quotaSize, 0, 
-                        @maxDailySends, 0, 
+                        @userId, @userName, @passwordHash, @passwordSalt, @enabled,
+                        @description, @quotaSize, 0,
+                        @maxDailySends, 0,
                         @quotaDate, @createDate
                     );
                 ";
@@ -552,17 +570,16 @@ namespace lsMailServer.Services
                 cmd.Parameters.AddWithValue("@passwordHash", passwordHash);
                 cmd.Parameters.AddWithValue("@passwordSalt", passwordSalt);
                 cmd.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@enabled", enabled);
+                cmd.Parameters.AddWithValue("@enabled", enabled ? 1 : 0);
                 cmd.Parameters.AddWithValue("@quotaSize", quotaMailboxSize);
                 cmd.Parameters.AddWithValue("@maxDailySends", quotaMaxDailySends);
                 cmd.Parameters.AddWithValue("@quotaDate", today);
                 cmd.Parameters.AddWithValue("@createDate", createDate);
 
-                cmd.ExecuteNonQuery();
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 return userId;
             }
-            catch (SqliteException)
-            {
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 19) {
                 // Unique constraint violation (UserName already exists, or rare ID collision)
                 return -1;
             }
@@ -570,44 +587,45 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method UpdateUser
+        #region method UpdateUserAsync
 
         /// <summary>
-        /// Updates an existing user's record in the database, selectively modifying only the fields 
+        /// Asynchronously updates an existing user's record in the database, selectively modifying only the fields
         /// that are provided (non-null), while leaving unprovided fields unchanged.
         /// </summary>
         /// <param name="userId">The unique 64-bit identifier of the user to update.</param>
-        /// <param name="newRawPassword">The new plaintext password to be hashed, or null to keep the existing password.</param>
-        /// <param name="description">The updated notes or description, or null to leave unchanged.</param>
-        /// <param name="enabled">The updated active status, or null to leave unchanged.</param>
-        /// <param name="quotaMailboxSize">The updated mailbox size quota in bytes, or null to leave unchanged.</param>
-        /// <param name="quotaMaxDailySends">The updated maximum daily email send limit, or null to leave unchanged.</param>
+        /// <param name="newRawPassword">The new plaintext password to be hashed, or <see langword="null"/> to keep the existing password.</param>
+        /// <param name="description">The updated notes or description, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="enabled">The updated active status, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="quotaMailboxSize">The updated mailbox size quota in bytes, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="quotaMaxDailySends">The updated maximum daily email send limit, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// <c>true</c> if the user record was successfully updated (at least one row affected); 
-        /// otherwise, <c>false</c> if the user ID was not found.
+        /// <see langword="true"/> if the user record was successfully updated (at least one row affected);
+        /// otherwise, <see langword="false"/> if the user ID was not found.
         /// </returns>
-        public bool UpdateUser(
+        public async Task<bool> UpdateUserAsync(
             long userId,
             string? newRawPassword = null,
             string? description = null,
             bool? enabled = null,
             long? quotaMailboxSize = null,
-            int? quotaMaxDailySends = null)
+            int? quotaMaxDailySends = null,
+            CancellationToken cancellationToken = default)
         {
             string? passwordHash = null;
             string? passwordSalt = null;
 
-            if (!string.IsNullOrEmpty(newRawPassword))
-            {
+            if (!string.IsNullOrEmpty(newRawPassword)) {
                 HashPassword(newRawPassword, out passwordHash, out passwordSalt);
             }
 
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
-                UPDATE Users 
-                SET 
+                UPDATE Users
+                SET
                     PasswordHash = COALESCE(@passwordHash, PasswordHash),
                     PasswordSalt = COALESCE(@passwordSalt, PasswordSalt),
                     Description = COALESCE(@description, Description),
@@ -625,67 +643,64 @@ namespace lsMailServer.Services
             cmd.Parameters.AddWithValue("@quotaMailboxSize", (object?)quotaMailboxSize ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@quotaMaxDailySends", (object?)quotaMaxDailySends ?? DBNull.Value);
 
-            int affectedRows = cmd.ExecuteNonQuery();
+            int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
             return affectedRows > 0;
         }
 
         #endregion
 
-        #region method DeleteUser
+        #region method DeleteUserAsync
 
         /// <summary>
-        /// Deletes a user account and all of its associated email addresses from the database 
+        /// Asynchronously deletes a user account and all of its associated email addresses from the database
         /// within an explicit transaction to ensure data integrity.
         /// </summary>
         /// <param name="userId">The unique 64-bit identifier of the user to delete.</param>
-        /// <param name="errorMessage">
-        /// When this method returns <c>false</c>, contains the error message or reason for failure; 
-        /// otherwise, <see cref="string.Empty"/>.
-        /// </param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// <c>true</c> if the user and their associated records were successfully deleted; 
-        /// otherwise, <c>false</c> if the user was not found or an exception occurred.
+        /// <see langword="null"/> if the user and associated records were deleted;
+        /// otherwise, an error message describing why deletion failed.
         /// </returns>
-        public bool DeleteUser(long userId, out string errorMessage)
+        public async Task<string?> DeleteUserAsync(long userId, CancellationToken cancellationToken = default)
         {
-            errorMessage = string.Empty;
-
             using var connection = CreateConnection();
-            
-            using var transaction = connection.BeginTransaction();
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-            try
-            {
-                using var cmd = connection.CreateCommand();
-                cmd.Transaction = transaction;
+            try {
+                await using var cmd = connection.CreateCommand();
+                cmd.Transaction = (SqliteTransaction)transaction;
 
                 // 1. Explicitly remove any associated email addresses/aliases first
                 cmd.CommandText = "DELETE FROM UserEmailAddresses WHERE UserId = @userId;";
                 cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", Microsoft.Data.Sqlite.SqliteType.Integer) { Value = userId });
-                cmd.ExecuteNonQuery();
+                await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 // 2. Now delete the user
                 cmd.CommandText = "DELETE FROM Users WHERE UserId = @userId;";
                 cmd.Parameters.Clear();
                 cmd.Parameters.Add(new Microsoft.Data.Sqlite.SqliteParameter("@userId", Microsoft.Data.Sqlite.SqliteType.Integer) { Value = userId });
-        
-                int rowsAffected = cmd.ExecuteNonQuery();
+
+                int rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
                 if (rowsAffected == 0)
                 {
-                    transaction.Rollback();
-                    errorMessage = $"User with ID {userId} was not found.";
-                    return false;
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    return $"User with ID {userId} was not found.";
                 }
 
-                transaction.Commit();
-                return true;
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return null;
             }
-            catch (Exception ex)
-            {
-                transaction.Rollback();
-                errorMessage = ex.Message;
-                return false;
+            catch (Exception ex) {
+                try {
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch {
+                    // Preserve the original exception message if rollback also fails
+                }
+
+                return ex.Message;
             }
         }
 
@@ -735,8 +750,7 @@ namespace lsMailServer.Services
             command.Parameters.AddWithValue("@email", normalizedEmail);
 
             using var reader = await command.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
-            {
+            if (await reader.ReadAsync(cancellationToken)) {
                 int ordUserId = reader.GetOrdinal("UserId");
                 int ordUserName = reader.GetOrdinal("UserName");
                 int ordDescription = reader.GetOrdinal("Description");
@@ -783,91 +797,107 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method AuthenticateUser
+        #region method AuthenticateUserAsync
 
         /// <summary>
-        /// Authenticates a user against stored hash and salt values.
-        /// Returns true if credentials are valid and the account is enabled.
+        /// Asynchronously authenticates a user against stored hash and salt values and updates <c>LastLoginDate</c>
+        /// when credentials are valid and the account is enabled.
         /// </summary>
-        /// <param name="userName">The login name or email address attempting authentication.</param>
+        /// <param name="userName">The login name attempting authentication.</param>
         /// <param name="rawPassword">The plaintext password provided during authentication.</param>
-        /// <param name="userId">Outputs the user's database ID if authentication succeeds; otherwise, -1.</param>
-        /// <returns>True if the credentials are valid and the account is active; otherwise, false.</returns>
-        public bool AuthenticateUser(string userName, string rawPassword, out long userId)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>
+        /// The authenticated user's 64-bit <c>UserId</c> if credentials are valid and the account is active;
+        /// otherwise, <see langword="null"/>.
+        /// </returns>
+        public async Task<long?> AuthenticateUserAsync(
+            string userName,
+            string rawPassword,
+            CancellationToken cancellationToken = default)
         {
-            userId = -1;
+            if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrEmpty(rawPassword)) {
+                return null;
+            }
 
+            string normalizedUserName = userName.Trim().ToLowerInvariant();
             using var connection = CreateConnection();
-    
+
+            long userId;
             string storedHash;
             string storedSalt;
             int enabled;
 
             // 1. Query user credentials and status
-            using (var cmd = connection.CreateCommand())
-            {
+            await using (var cmd = connection.CreateCommand()) {
                 cmd.CommandText = @"
-                    SELECT UserId, PasswordHash, PasswordSalt, Enabled 
-                    FROM Users 
+                    SELECT UserId, PasswordHash, PasswordSalt, Enabled
+                    FROM Users
                     WHERE UserName = @userName;
                 ";
-                cmd.Parameters.AddWithValue("@userName", userName.Trim().ToLowerInvariant());
+                cmd.Parameters.AddWithValue("@userName", normalizedUserName);
 
-                using var reader = cmd.ExecuteReader();
-                if (!reader.Read()) {
-                    return false; // User not found
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return null; // User not found
                 }
 
                 userId = reader.GetInt64(0);
                 storedHash = reader.GetString(1);
                 storedSalt = reader.GetString(2);
                 enabled = reader.GetInt32(3);
-            } // Reader is disposed here, freeing the connection for the next command
+            }
 
             if (enabled != 1) {
-                userId = -1;
-                return false; // Account disabled
+                return null; // Account disabled
             }
 
             // 2. Verify password using the shared hashing mechanism
             if (!VerifyPassword(rawPassword, storedHash, storedSalt)) {
-                userId = -1;
-                return false;
+                return null;
             }
 
-            // 3. Authentication successful — update the LastLoginDate timestamp
-            using (var updateCmd = connection.CreateCommand())
-            {
+            // 3. Authentication successful — update LastLoginDate
+            string lastLoginIso = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
+            await using (var updateCmd = connection.CreateCommand()) {
                 updateCmd.CommandText = @"
-                    UPDATE Users 
-                    SET LastLoginDate = @lastLogin 
+                    UPDATE Users
+                    SET LastLoginDate = @lastLogin
                     WHERE UserId = @userId;
                 ";
-                updateCmd.Parameters.AddWithValue("@lastLogin", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+                updateCmd.Parameters.AddWithValue("@lastLogin", lastLoginIso);
                 updateCmd.Parameters.AddWithValue("@userId", userId);
-                updateCmd.ExecuteNonQuery();
+                await updateCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            return true;
+            return userId;
         }
 
         #endregion
 
-        #region method UpdateUserStorageUsage
+        #region method UpdateUserStorageUsageAsync
 
         /// <summary>
-        /// Updates the current storage usage quota for a specified user in the database, 
+        /// Asynchronously updates the current storage usage quota for a specified user in the database,
         /// ensuring the usage never drops below zero.
         /// </summary>
         /// <param name="userName">The username whose storage quota usage is being modified.</param>
         /// <param name="byteDelta">The number of bytes to add (positive) or subtract (negative) from the current usage.</param>
-        public void UpdateUserStorageUsage(string userName, long byteDelta)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        public async Task UpdateUserStorageUsageAsync(
+            string userName,
+            long byteDelta,
+            CancellationToken cancellationToken = default)
         {
+            if (string.IsNullOrWhiteSpace(userName)) {
+                return;
+            }
+
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
-                UPDATE Users 
+                UPDATE Users
                 SET QuotaCurrentUsageBytes = MAX(0, QuotaCurrentUsageBytes + @delta)
                 WHERE UserName = @userName;
             ";
@@ -875,77 +905,88 @@ namespace lsMailServer.Services
             cmd.Parameters.AddWithValue("@delta", byteDelta);
             cmd.Parameters.AddWithValue("@userName", userName.Trim().ToLowerInvariant());
 
-            cmd.ExecuteNonQuery();
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         #endregion   
 
-        #region method IncrementDailySendCount
+        #region method IncrementDailySendCountAsync
 
         /// <summary>
-        /// Increments the user's daily send count.
+        /// Asynchronously increments the user's daily send count, resetting the counter to <c>1</c>
+        /// when the last send occurred on a prior UTC date.
         /// </summary>
         /// <param name="userName">The authenticated username of the sender.</param>
-        public void IncrementDailySendCount(string userName)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        public async Task IncrementDailySendCountAsync(
+            string userName,
+            CancellationToken cancellationToken = default)
         {
-            string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            if (string.IsNullOrWhiteSpace(userName)) {
+                return;
+            }
+
+            string todayStr = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            string normalizedUserName = userName.Trim().ToLowerInvariant();
 
             using var connection = CreateConnection();
-            
+
             const string updateSql = @"
-                UPDATE Users 
+                UPDATE Users
                 SET QuotaSentCountToday = CASE WHEN QuotaLastSendDate = @today THEN QuotaSentCountToday + 1 ELSE 1 END,
                     QuotaLastSendDate = @today
-                WHERE Username = @username;
+                WHERE UserName = @username;
             ";
 
-            using var cmd = new SqliteCommand(updateSql, connection);
+            await using var cmd = new SqliteCommand(updateSql, connection);
             cmd.Parameters.AddWithValue("@today", todayStr);
-            cmd.Parameters.AddWithValue("@username", userName);
-            cmd.ExecuteNonQuery();
+            cmd.Parameters.AddWithValue("@username", normalizedUserName);
+
+            await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         #endregion
 
-        #region method EmailAddressExists
+        #region method EmailAddressExistsAsync
 
         /// <summary>
-        /// Checks whether a given email address exists in the routing database 
+        /// Asynchronously checks whether a given email address exists in the routing database
         /// and verifies that both the owning user account and the target domain are enabled.
         /// </summary>
-        /// <param name="emailAddress">The email address to check (e.g., user@example.com).</param>
+        /// <param name="emailAddress">The email address to check (e.g., <c>user@example.com</c>).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// <see langword="true"/> if the email exists, belongs to an enabled user, 
+        /// <see langword="true"/> if the email exists, belongs to an enabled user,
         /// and resides on an enabled domain; otherwise, <see langword="false"/>.
         /// </returns>
-        public bool EmailAddressExists(string emailAddress)
+        public async Task<bool> EmailAddressExistsAsync(
+            string emailAddress,
+            CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(emailAddress))
-            {
+            if (string.IsNullOrWhiteSpace(emailAddress)) {
                 return false;
             }
 
             string normalizedEmail = emailAddress.Trim().ToLowerInvariant();
-            
-            // Extract the domain part in C#
+
+            // Extract the domain part
             int atIndex = normalizedEmail.IndexOf('@');
-            if (atIndex <= 0 || atIndex == normalizedEmail.Length - 1)
-            {
+            if (atIndex <= 0 || atIndex == normalizedEmail.Length - 1) {
                 return false; // Invalid email format
             }
 
             string domainName = normalizedEmail[(atIndex + 1)..];
 
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
-                SELECT 1 
+                SELECT 1
                 FROM UserEmailAddresses ue
                 JOIN Users u ON ue.UserId = u.UserId
                 JOIN Domains d ON d.DomainName = @domainName
-                WHERE ue.EmailAddress = @emailAddress 
-                  AND u.Enabled = 1 
+                WHERE ue.EmailAddress = @emailAddress
+                  AND u.Enabled = 1
                   AND d.Enabled = 1
                 LIMIT 1;
             ";
@@ -953,77 +994,76 @@ namespace lsMailServer.Services
             cmd.Parameters.AddWithValue("@emailAddress", normalizedEmail);
             cmd.Parameters.AddWithValue("@domainName", domainName);
 
-            using var reader = cmd.ExecuteReader();
-            return reader.HasRows;
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            return await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
         }
 
         #endregion
 
-        #region method CreateEmailAddress
+        #region method CreateEmailAddressAsync
 
         /// <summary>
-        /// Creates and assigns a new email address routing record for a user, 
-        /// verifying that the user exists, the domain is registered and enabled, and the email is unique.
+        /// Asynchronously creates and assigns a new email address routing record for a user,
+        /// verifying that the user exists and is enabled, the domain is registered and enabled,
+        /// and the email address is unique.
         /// </summary>
         /// <param name="userId">The unique 64-bit ID of the user owning the email address.</param>
-        /// <param name="emailAddress">The email address to create (e.g., user@example.com).</param>
-        /// <param name="errorMessage">When the method returns false, contains the reason for failure.</param>
-        /// <returns><see langword="true"/> if successfully created; otherwise, <see langword="false"/>.</returns>
-        public bool CreateEmailAddress(long userId, string emailAddress, out string errorMessage)
+        /// <param name="emailAddress">The email address to create (e.g., <c>user@example.com</c>).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>
+        /// <see langword="null"/> if the email address was created successfully;
+        /// otherwise, an error message describing why creation failed.
+        /// </returns>
+        public async Task<string?> CreateEmailAddressAsync(
+            long userId,
+            string emailAddress,
+            CancellationToken cancellationToken = default)
         {
-            errorMessage = string.Empty;
-
-            if (string.IsNullOrWhiteSpace(emailAddress))
-            {
-                errorMessage = "Email address cannot be null or empty.";
-                return false;
+            if (string.IsNullOrWhiteSpace(emailAddress)) {
+                return "Email address cannot be null or empty.";
             }
 
             string normalizedEmail = emailAddress.Trim().ToLowerInvariant();
 
             // Extract the domain part in C#
             int atIndex = normalizedEmail.IndexOf('@');
-            if (atIndex <= 0 || atIndex == normalizedEmail.Length - 1)
-            {
-                errorMessage = $"Invalid email address format: '{emailAddress}'.";
-                return false;
+            if (atIndex <= 0 || atIndex == normalizedEmail.Length - 1) {
+                return $"Invalid email address format: '{emailAddress}'.";
             }
 
             string domainName = normalizedEmail[(atIndex + 1)..];
-            string createDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            string createDate = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
             using var connection = CreateConnection();
 
             // 1. Verify user existence and active status
-            using var userCheckCmd = connection.CreateCommand();
-            userCheckCmd.CommandText = "SELECT 1 FROM Users WHERE UserId = @userId AND Enabled = 1 LIMIT 1;";
-            userCheckCmd.Parameters.AddWithValue("@userId", userId);
-            
-            if (userCheckCmd.ExecuteScalar() == null)
-            {
-                errorMessage = $"User with ID {userId} does not exist or is disabled.";
-                return false;
+            await using (var userCheckCmd = connection.CreateCommand()) {
+                userCheckCmd.CommandText = "SELECT 1 FROM Users WHERE UserId = @userId AND Enabled = 1 LIMIT 1;";
+                userCheckCmd.Parameters.AddWithValue("@userId", userId);
+
+                if (await userCheckCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) == null) {
+                    return $"User with ID {userId} does not exist or is disabled.";
+                }
             }
 
             // 2. Verify domain existence and active status
-            using var domainCheckCmd = connection.CreateCommand();
-            domainCheckCmd.CommandText = "SELECT 1 FROM Domains WHERE DomainName = @domainName AND Enabled = 1 LIMIT 1;";
-            domainCheckCmd.Parameters.AddWithValue("@domainName", domainName);
+            await using (var domainCheckCmd = connection.CreateCommand()) {
+                domainCheckCmd.CommandText = "SELECT 1 FROM Domains WHERE DomainName = @domainName AND Enabled = 1 LIMIT 1;";
+                domainCheckCmd.Parameters.AddWithValue("@domainName", domainName);
 
-            if (domainCheckCmd.ExecuteScalar() == null)
-            {
-                errorMessage = $"Domain '{domainName}' is not registered on this server or is disabled.";
-                return false;
+                if (await domainCheckCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) == null) {
+                    return $"Domain '{domainName}' is not registered on this server or is disabled.";
+                }
             }
 
             // 3. Attempt insert
-            try
-            {
-                using var insertCmd = connection.CreateCommand();
+            try {
+                await using var insertCmd = connection.CreateCommand();
                 insertCmd.CommandText = @"
                     INSERT INTO UserEmailAddresses (
                         EmailAddress, UserID, CreateDate
-                    ) 
+                    )
                     VALUES (
                         @emailAddress, @userId, @createDate
                     );
@@ -1033,13 +1073,11 @@ namespace lsMailServer.Services
                 insertCmd.Parameters.AddWithValue("@userId", userId);
                 insertCmd.Parameters.AddWithValue("@createDate", createDate);
 
-                insertCmd.ExecuteNonQuery();
-                return true;
+                await insertCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                return null;
             }
-            catch (SqliteException)
-            {
-                errorMessage = $"The email address '{normalizedEmail}' is already taken.";
-                return false;
+            catch (SqliteException) {
+                return $"The email address '{normalizedEmail}' is already taken.";
             }
         }
 
@@ -1048,43 +1086,44 @@ namespace lsMailServer.Services
         #region method DeleteEmailAddress
            
         /// <summary>
-        /// Deletes a specific email address associated with a user account from the database.
+        /// Asynchronously deletes a specific email address associated with a user account from the database.
         /// </summary>
         /// <param name="userId">The unique numeric identifier of the user owning the email address.</param>
         /// <param name="emailAddress">The email address to be removed.</param>
-        /// <param name="errorMessage">When this method returns, contains an explanatory message if the operation fails or the email is not found; otherwise, <c>string.Empty</c>.</param>
-        /// <returns><c>true</c> if the email address was successfully deleted; otherwise, <c>false</c>.</returns>
-        public bool DeleteEmailAddress(long userId, string emailAddress, out string errorMessage)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>
+        /// <see langword="null"/> if the email address was successfully deleted;
+        /// otherwise, an explanatory message if validation failed or the email address was not found for the user.
+        /// </returns>
+        public async Task<string?> DeleteEmailAddressAsync(
+            long userId,
+            string emailAddress,
+            CancellationToken cancellationToken = default)
         {
-            errorMessage = string.Empty;
-
-            if (string.IsNullOrWhiteSpace(emailAddress))
-            {
-                errorMessage = "Email address cannot be null or empty.";
-                return false;
+            if (string.IsNullOrWhiteSpace(emailAddress)) {
+                return "Email address cannot be null or empty.";
             }
 
             string normalizedEmail = emailAddress.Trim().ToLowerInvariant();
 
             using var connection = CreateConnection();
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
-                DELETE FROM UserEmailAddresses 
+                DELETE FROM UserEmailAddresses
                 WHERE UserId = @userId AND EmailAddress = @emailAddress;
             ";
 
             cmd.Parameters.AddWithValue("@userId", userId);
             cmd.Parameters.AddWithValue("@emailAddress", normalizedEmail);
 
-            int rowsAffected = cmd.ExecuteNonQuery();
+            int rowsAffected = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
             if (rowsAffected == 0) {
-                errorMessage = $"The email address '{normalizedEmail}' was not found for this user.";
-                return false;
+                return $"The email address '{normalizedEmail}' was not found for this user.";
             }
 
-            return true;
+            return null;
         }
 
         #endregion

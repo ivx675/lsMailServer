@@ -10,6 +10,7 @@ namespace lsMailServer.RestApi
     /// </summary>
     [ApiController]
     [Route("api/sessions")]
+    [Authorize]
     public sealed class SessionsController : ControllerBase
     {
         #region record SessionDto
@@ -60,11 +61,8 @@ namespace lsMailServer.RestApi
         /// </summary>
         /// <returns>An <see cref="ActionResult{T}"/> containing the list of active <see cref="SessionDto"/> entries.</returns>
         [HttpGet]
-        [Authorize]
         public ActionResult<IReadOnlyList<SessionDto>> GetSessions()
         {
-            DateTime now = DateTime.UtcNow;
-
             var sessions = _mailServerHostedService.GetSessions();
             sessions.Sort((a, b) => b.ConnectTime.CompareTo(a.ConnectTime));
 
@@ -86,7 +84,6 @@ namespace lsMailServer.RestApi
         /// <see cref="NotFoundResult"/> if no matching active session exists.
         /// </returns>
         [HttpDelete("{protocol}/{id}")]
-        [Authorize]
         public IActionResult DisconnectSession(string protocol, string id)
         {
             if (string.IsNullOrWhiteSpace(protocol) || string.IsNullOrWhiteSpace(id)) {

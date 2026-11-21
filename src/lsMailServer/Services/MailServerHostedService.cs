@@ -24,7 +24,7 @@ namespace lsMailServer.Services
     {
         private readonly ILogger<MailServerHostedService> _logger;
         private readonly IConfiguration _configuration;
-        private readonly DatabaseService _dbService;
+        private readonly IDatabaseService _dbService;
         private readonly MailStoreService _mailStoreService;
 
         private SMTP_Server? _smtpServer;
@@ -44,7 +44,7 @@ namespace lsMailServer.Services
         public MailServerHostedService(
             ILogger<MailServerHostedService> logger,
             IConfiguration configuration,
-            DatabaseService dbService,
+            IDatabaseService dbService,
             MailStoreService mailStoreService,
             SmtpRelayService relayService)
         {
@@ -70,9 +70,9 @@ namespace lsMailServer.Services
 
                 // Add SASL plain authentication.
                 var sasPlain = new AUTH_SASL_ServerMechanism_Plain(true);
-                sasPlain.Authenticate += (s,eArgs) => {
+                sasPlain.Authenticate += async (s,eArgs) => {
                     try {
-                        eArgs.IsAuthenticated = _dbService.AuthenticateUser(eArgs.UserName, eArgs.Password,out _);
+                        eArgs.IsAuthenticated = await _dbService.AuthenticateUserAsync(eArgs.UserName, eArgs.Password) != null;
                     }
                     catch (Exception ex) {
                         _logger.LogError(ex, "Error during SMTP authentication.");
@@ -105,7 +105,7 @@ namespace lsMailServer.Services
 
                     // Check user daily send qouta limit.
                     if (eArgs.Session.AuthenticatedUserIdentity != null) {
-                        var user = _dbService.GetUser(eArgs.Session.AuthenticatedUserIdentity.Name);
+                        var user = await _dbService.GetUserAsync(eArgs.Session.AuthenticatedUserIdentity.Name);
                         if (user != null) {
                             if (user.Value.QuotaSentCountToday >= user.Value.QuotaMaxDailySends) {
                                 eArgs.Response = new (552,new SMTP_t_EnhancedStatusCode(5,5,2),"Daily sending quota exceeded. Please try again tomorrow.");
@@ -147,7 +147,7 @@ namespace lsMailServer.Services
                 e.Session.RcptToAsync += async (eArgs) => {
                     try {
                         // Check if the email exists and is domain and user is enabled
-                        if (_dbService.EmailAddressExists(eArgs.RcptTo.Mailbox)) {
+                        if (await _dbService.EmailAddressExistsAsync(eArgs.RcptTo.Mailbox)) {
                             var user = await _dbService.ResolveUserAsync(eArgs.RcptTo.Mailbox);
                             if (user == null) {
                                 _logger.LogError("Error during RCPT TO validation.");
@@ -166,7 +166,7 @@ namespace lsMailServer.Services
                         }
                         else{
                             // Check if the domain exists and is enabled
-                            if (_dbService.DomainExists(eArgs.RcptTo.Domain)) {
+                            if (await _dbService.DomainExistsAsync(eArgs.RcptTo.Domain)) {
                                 eArgs.Response = new SMTP_ServerResponse(550, new SMTP_t_EnhancedStatusCode(5,1,1), "User unknown.");
                             }
                             else if (eArgs.Session.IsAuthenticated) {
@@ -230,7 +230,7 @@ namespace lsMailServer.Services
                         }
 
                         if (eArgs.Session.AuthenticatedUserIdentity != null) {
-                            _dbService.IncrementDailySendCount(eArgs.Session.AuthenticatedUserIdentity.Name);
+                            await _dbService.IncrementDailySendCountAsync(eArgs.Session.AuthenticatedUserIdentity.Name);
                         }
                     }
                     catch (Exception ex) {
@@ -261,9 +261,9 @@ namespace lsMailServer.Services
 
             // Add SASL plain authentication.
             var sasPlain = new AUTH_SASL_ServerMechanism_Plain(true);
-            sasPlain.Authenticate += (s,eArgs) => { 
+            sasPlain.Authenticate += async (s,eArgs) => { 
                 try {
-                    eArgs.IsAuthenticated = _dbService.AuthenticateUser(eArgs.UserName, eArgs.Password,out _);
+                    eArgs.IsAuthenticated = await _dbService.AuthenticateUserAsync(eArgs.UserName, eArgs.Password) != null;
                 }
                 catch (Exception ex) {
                     _logger.LogError(ex, "Error during POP3 authentication.");
@@ -274,10 +274,10 @@ namespace lsMailServer.Services
             #region AuthUserPassAsync
 
             // Raised when USER/PASS authentication is received.
-            e.Session.AuthUserPassAsync += async (eArgsAuthUserPass) => {
+            e.Session.AuthUserPassAsync += async (eArgs) => {
                 try {
-                    if (_dbService.AuthenticateUser(eArgsAuthUserPass.UserName, eArgsAuthUserPass.Password,out _)) {
-                        eArgsAuthUserPass.Response = new POP3_ServerResponse("+OK",null,"Authenticated successfully.");
+                    if (await _dbService.AuthenticateUserAsync(eArgs.UserName, eArgs.Password) != null) {
+                        eArgs.Response = new POP3_ServerResponse("+OK",null,"Authenticated successfully.");
                     }
                 }
                 catch (Exception ex) {
@@ -322,7 +322,8 @@ namespace lsMailServer.Services
             e.Session.GetMessageStreamAsync += async (eArgs) => {
                 try {
                     // Retrieve the message stream for the requested message UID
-                    var messageStream = _mailStoreService.GetMessageStream(eArgs.Session.AuthenticatedUserIdentity!.Name, "Inbox", long.Parse(eArgs.Message.UID), true);
+                    var messageStream = await _mailStoreService.GetMessageStreamAsync(
+                        eArgs.Session.AuthenticatedUserIdentity!.Name, "Inbox", long.Parse(eArgs.Message.UID), true);
                     eArgs.MessageStream = messageStream;
                 }
                 catch (Exception ex) {
@@ -376,9 +377,9 @@ namespace lsMailServer.Services
 
             // Add SASL plain authentication.
             var sasPlain = new AUTH_SASL_ServerMechanism_Plain(true);
-            sasPlain.Authenticate += (s,eArgs) => { 
+            sasPlain.Authenticate += async (s,eArgs) => { 
                 try {
-                    eArgs.IsAuthenticated = _dbService.AuthenticateUser(eArgs.UserName, eArgs.Password,out _);
+                    eArgs.IsAuthenticated = _dbService.AuthenticateUserAsync(eArgs.UserName, eArgs.Password) != null;
                 }
                 catch (Exception ex) {
                     _logger.LogError(ex, "Error during IMAP authentication.");
@@ -389,7 +390,7 @@ namespace lsMailServer.Services
             // Raised when LOGIN authentication is received.
             e.Session.AuthLoginAsync += async (eArgs) => {
                 try {
-                    if (_dbService.AuthenticateUser(eArgs.UserName, eArgs.Password,out _)) {
+                    if (_dbService.AuthenticateUserAsync(eArgs.UserName, eArgs.Password) != null) {
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","Authenticated successfully.");
                     }
                 }
@@ -482,7 +483,7 @@ namespace lsMailServer.Services
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"NO","[NONEXISTENT] Folder does not exist.");
                     }
                     else {                        
-                        _mailStoreService.DeleteFolder(userName,folder);
+                        await _mailStoreService.DeleteFolderAsync(userName,folder);
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","Folder deleted.");
                     }
                 }
@@ -535,7 +536,7 @@ namespace lsMailServer.Services
         
                     // 1. Get explicitly subscribed folder paths from database (relative, normalized)
                     HashSet<string> subscribedFolders = new HashSet<string>(
-                        _mailStoreService.GetSubscribedFolders(userName).Select(f => f.Replace('\\', '/')),
+                        (await _mailStoreService.GetSubscribedFoldersAsync(userName)).Select(f => f.Replace('\\', '/')),
                         StringComparer.OrdinalIgnoreCase
                     );
 
@@ -600,7 +601,7 @@ namespace lsMailServer.Services
             // Raised when a SUBSCRIBE command is received.
             e.Session.SubscribeAsync += async (eArgs) => {
                 try {
-                    _mailStoreService.SubscribeFolder(eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder);
+                    await _mailStoreService.SubscribeFolderAsync(eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder);
                     eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","Folder subscribed.");
                 }
                 catch (Exception x) {
@@ -616,7 +617,7 @@ namespace lsMailServer.Services
             // Raised when a UNSUBSCRIBE command is received.
             e.Session.UnsubscribeAsync += async (eArgs) => {
                 try {
-                    _mailStoreService.UnsubscribeFolder(eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder);
+                    await _mailStoreService.UnsubscribeFolderAsync(eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder);
                     eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","Folder unsubscribed.");
                 }
                 catch (Exception x) {
@@ -781,7 +782,7 @@ namespace lsMailServer.Services
             // Raised when a APPEND command has completed processing.
             e.Session.AppendCompleteAsync += async (eArgs) => {
                 try {
-                    var user = _dbService.GetUser(eArgs.Session.AuthenticatedUserIdentity!.Name);
+                    var user = await _dbService.GetUserAsync(eArgs.Session.AuthenticatedUserIdentity!.Name);
                     if (user == null) {
                         _logger.LogError("Unexpected error processing IMAP APPEND command.");
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"NO","An unexpected server error occurred while processing your request.");
@@ -820,7 +821,7 @@ namespace lsMailServer.Services
                 try {
                     string userName = eArgs.Session.AuthenticatedUserIdentity!.Name;
                     if (_mailStoreService.FolderExists(userName,eArgs.Folder)) {
-                        var userInfo = _dbService.GetUser(userName);
+                        var userInfo = await _dbService.GetUserAsync(userName);
                         if (userInfo != null) {
                             // IMAP quota expects KB, not bytes.
                             long quotaLimitInKb = userInfo.Value.QuotaMailboxSize / 1024;
@@ -854,7 +855,7 @@ namespace lsMailServer.Services
                 try {
                     string userName = eArgs.Session.AuthenticatedUserIdentity!.Name;
                     if (string.Equals("",eArgs.QuotaRoot,StringComparison.OrdinalIgnoreCase)) {
-                        var userInfo = _dbService.GetUser(userName);
+                        var userInfo = await _dbService.GetUserAsync(userName);
                         if (userInfo != null) {
                             // IMAP quota expects KB, not bytes.
                             long quotaLimitInKb = userInfo.Value.QuotaMailboxSize / 1024;
@@ -952,7 +953,7 @@ namespace lsMailServer.Services
                         IMAP_t_BodyStructure? bodyStructure = null;
                         try{
                             if(eArgs.RequiresMessageStream){
-                                messageStream = _mailStoreService.GetMessageStream(userName,folder,message.UID,eArgs.SetSeen);
+                                messageStream = await _mailStoreService.GetMessageStreamAsync(userName,folder,message.UID,eArgs.SetSeen);
                                 // Message no longer exists.
                                 if(messageStream == null) {
                                     continue;
@@ -960,7 +961,7 @@ namespace lsMailServer.Services
                             }
 
                             if(eArgs.RequiresEnvelope || eArgs.RequiresBodyStructure){
-                                var messageInfo = _mailStoreService.GetMessageInfo(userName,folder,message.UID);
+                                var messageInfo = await _mailStoreService.GetMessageInfoAsync(userName,folder,message.UID);
                                 // Message no longer exists.
                                 if(messageInfo == null) {
                                     continue;
@@ -991,7 +992,8 @@ namespace lsMailServer.Services
             // Raised when a SEARCH or UID SEARCH command is received.
             e.Session.SearchAsync += async (eArgs) => {
                 try {
-                    eArgs.MatchedUids = _mailStoreService.Search(eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder,eArgs.Criteria).ToArray();
+                    eArgs.MatchedUids = (await _mailStoreService.SearchAsync(
+                        eArgs.Session.AuthenticatedUserIdentity!.Name,eArgs.Folder,eArgs.Criteria)).ToArray();
 
                     eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","SEARCH completed.");
                 }
@@ -1021,7 +1023,7 @@ namespace lsMailServer.Services
                             storeMode = FlagStoreMode.Replace;
                         }
 
-                        _mailStoreService.StoreMessageFlags(userName,eArgs.Folder,message.UID,eArgs.Flags,storeMode);
+                        await _mailStoreService.StoreMessageFlagsAsync(userName,eArgs.Folder,message.UID,eArgs.Flags,storeMode);
                     }
 
                     eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag,"OK","STORE completed.");
@@ -1053,7 +1055,7 @@ namespace lsMailServer.Services
                         totalMessagesSize += m.Size;
                     }
         
-                    UserInfo? userInfo = _dbService.GetUser(userName);
+                    UserInfo? userInfo = await _dbService.GetUserAsync(userName);
                     if (userInfo == null) {
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag, "NO", "An unexpected server error occurred while processing your request.");
                         return;
@@ -1132,7 +1134,7 @@ namespace lsMailServer.Services
 
                     // 1. Pre-flight Quota & Target Folder Validation
                     long totalMessagesSize = eArgs.Messages.Sum(m => m.Size);
-                    var userInfo = _dbService.GetUser(userName);
+                    var userInfo = await _dbService.GetUserAsync(userName);
                     if (userInfo == null) {
                         eArgs.Response = new IMAP_r_ServerStatus(eArgs.Response.CommandTag, "NO", "Server error.");
                         return;
@@ -1190,7 +1192,7 @@ namespace lsMailServer.Services
                 
                             try {
                                 // Fallback: Set \Deleted flag so standard expunge/cleaner handles it later
-                                _mailStoreService.StoreMessageFlags(userName, eArgs.SourceFolder, m.UID, ["\\Deleted"], FlagStoreMode.Replace);
+                                await _mailStoreService.StoreMessageFlagsAsync(userName, eArgs.SourceFolder, m.UID, ["\\Deleted"], FlagStoreMode.Replace);
                             }
                             catch (Exception flagEx) {
                                 _logger.LogError(flagEx, "Failed to apply fallback \\Deleted flag to source message UID {Uid}.", m.UID);
@@ -1252,11 +1254,7 @@ namespace lsMailServer.Services
         {
             _logger.LogInformation("Starting Mail Server instance from directory: {BaseDir}", AppContext.BaseDirectory);
 
-            // 1. Verify database connection and schema on startup
-            using var connection = _dbService.CreateConnection();
-            _logger.LogInformation("SQLite database initialized and WAL mode active.");
-
-            // 2. Initialize and start servers
+            // . Initialize and start servers
 
             #region SMTP server
 

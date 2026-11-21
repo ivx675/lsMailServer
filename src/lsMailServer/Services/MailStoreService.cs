@@ -13,7 +13,7 @@ namespace lsMailServer.Services
     /// </summary>
     public class MailStoreService
     {
-        private readonly DatabaseService _dbService;
+        private readonly IDatabaseService _dbService;
         private readonly string _baseStoragePath;
         private readonly string _serverTempDirectory;
 
@@ -40,7 +40,7 @@ namespace lsMailServer.Services
         /// </summary>
         /// <param name="dbService">The database service used for managing user metadata, storage quotas, and system database operations.</param>
         /// <param name="baseStoragePath">The root physical directory path on disk where all mailboxes, folders, and temporary streaming data are stored.</param>
-        public MailStoreService(DatabaseService dbService,string baseStoragePath)
+        public MailStoreService(IDatabaseService dbService,string baseStoragePath)
         {
             _dbService = dbService;
             _baseStoragePath = baseStoragePath;
@@ -86,7 +86,7 @@ namespace lsMailServer.Services
         /// </returns>
         public string[] GetFolders(string userName)
         {
-            string userRootPath = Path.Combine(_baseStoragePath, "Mailboxes", userName);
+            string userRootPath = GetValidatedUserRootPath(userName);
             if (!Directory.Exists(userRootPath)) {
                 return Array.Empty<string>();
             }
@@ -215,20 +215,26 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method DeleteFolder
+        #region method DeleteFolderAsync
 
         /// <summary>
-        /// Deletes a specified mailbox folder for a user, recursively removing its contents 
-        /// and local SQLite cache, calculates the freed disk space from stored email files, 
+        /// Asynchronously deletes a specified mailbox folder for a user, recursively removing its contents
+        /// and local SQLite cache, calculates the freed disk space from stored email files,
         /// and updates the user's total storage usage tracking.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder to be deleted.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <exception cref="DirectoryNotFoundException">
         /// Thrown when the target folder does not exist on disk.
         /// </exception>
-        public void DeleteFolder(string userName,string folderName)
+        public async Task DeleteFolderAsync(
+            string userName,
+            string folderName,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             string userFolderPath = GetValidatedUserFolderPath(userName, folderName);
 
             var dirInfo = new DirectoryInfo(userFolderPath);
@@ -237,12 +243,15 @@ namespace lsMailServer.Services
             }
 
             // Natively recursive and memory-efficient (deferred execution)
-            long totalBytesFreed = dirInfo.EnumerateFiles("*.eml", SearchOption.AllDirectories)
-                                     .Sum(file => file.Length);
+            long totalBytesFreed = dirInfo
+                .EnumerateFiles("*.eml", SearchOption.AllDirectories)
+                .Sum(file => file.Length);
 
-            Directory.Delete(userFolderPath,true);
+            Directory.Delete(userFolderPath, recursive: true);
 
-            _dbService.UpdateUserStorageUsage(userName, -totalBytesFreed);
+            await _dbService
+                .UpdateUserStorageUsageAsync(userName, -totalBytesFreed, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         #endregion
@@ -264,40 +273,43 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region mehtod GetSubscribedFolders
+        #region mehtod GetSubscribedFoldersAsync
 
         /// <summary>
-        /// Retrieves a collection of folder names that the specified user is currently subscribed to 
+        /// Asynchronously retrieves a collection of folder names that the specified user is currently subscribed to
         /// by querying their local user metadata SQLite database.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An array of subscribed folder name strings. Returns an empty array if the user's 
+        /// An array of subscribed folder name strings. Returns an empty array if the user's
         /// metadata database does not exist yet or contains no active subscriptions.
         /// </returns>
-        public string[] GetSubscribedFolders(string userName)
+        public async Task<string[]> GetSubscribedFoldersAsync(
+            string userName,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var subscribedFolders = new List<string>();
-            
-            string userDir = Path.Combine(_baseStoragePath, "Mailboxes", userName);
-            Directory.CreateDirectory(userDir); // Ensure root exists
+
+            string userDir = GetValidatedUserRootPath(userName);
+            Directory.CreateDirectory(userDir);
             string dbPath = Path.Combine(userDir, "userdata.db");
 
             if (!File.Exists(dbPath)) {
-                // If the user metadata db doesn't exist yet.
-                return subscribedFolders.ToArray();
+                return Array.Empty<string>();
             }
 
-            using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;");
-            connection.Open();
+            await using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly;");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            // Ensure table exists safely or handle missing table if db is brand new
-            string query = "SELECT folder_name FROM Subscriptions;";
+            const string query = "SELECT folder_name FROM Subscriptions;";
 
-            using var cmd = new SqliteCommand(query, connection);
-            using var reader = cmd.ExecuteReader();
-    
-            while (reader.Read()) {
+            await using var cmd = new SqliteCommand(query, connection);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                 subscribedFolders.Add(reader.GetString(0));
             }
 
@@ -306,88 +318,117 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method SubscribeFolder
+        #region method SubscribeFolderAsync
 
         /// <summary>
-        /// Subscribes a user to a specified mailbox folder by recording it in their local user metadata 
+        /// Asynchronously subscribes a user to a specified mailbox folder by recording it in their local user metadata
         /// SQLite database. Automatically ensures the user directory, database file, and subscriptions table exist.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder to subscribe to.</param>
-        public void SubscribeFolder(string userName, string folderName)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        public async Task SubscribeFolderAsync(
+            string userName,
+            string folderName,
+            CancellationToken cancellationToken = default)
         {
-            string userDir = Path.Combine(_baseStoragePath, "Mailboxes", userName);
-            Directory.CreateDirectory(userDir); // Ensure root exists
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string userDir = GetValidatedUserRootPath(userName);
+            Directory.CreateDirectory(userDir);
             string dbPath = Path.Combine(userDir, "userdata.db");
 
-            using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared;");
-            connection.Open();
+            await using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared;");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            // Ensure table exists
-            using (var cmd = new SqliteCommand("CREATE TABLE IF NOT EXISTS Subscriptions (folder_name TEXT PRIMARY KEY);", connection)) {
-                cmd.ExecuteNonQuery();
+            await using (var createCmd = new SqliteCommand(
+                "CREATE TABLE IF NOT EXISTS Subscriptions (folder_name TEXT PRIMARY KEY);",
+                connection))
+            {
+                await createCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            using (var cmd = new SqliteCommand("INSERT OR IGNORE INTO Subscriptions (folder_name) VALUES (@folderName);", connection)) {
-                cmd.Parameters.AddWithValue("@folderName", folderName);
-                cmd.ExecuteNonQuery();
+            await using (var insertCmd = new SqliteCommand(
+                "INSERT OR IGNORE INTO Subscriptions (folder_name) VALUES (@folderName);",
+                connection))
+            {
+                insertCmd.Parameters.AddWithValue("@folderName", folderName);
+                await insertCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
         #endregion
 
-        #region method UnsubscribeFolder
+        #region method UnsubscribeFolderAsync
 
         /// <summary>
-        /// Removes a user's subscription to a specified mailbox folder by deleting the record 
-        /// from their local user metadata SQLite database. Safely ensures the user directory, 
+        /// Asynchronously removes a user's subscription to a specified mailbox folder by deleting the record
+        /// from their local user metadata SQLite database. Safely ensures the user directory,
         /// database file, and subscriptions table exist before executing the deletion.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder to unsubscribe from.</param>
-        public void UnsubscribeFolder(string userName, string folderName)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        public async Task UnsubscribeFolderAsync(
+            string userName,
+            string folderName,
+            CancellationToken cancellationToken = default)
         {
-            string userDir = Path.Combine(_baseStoragePath, "Mailboxes", userName);
-            Directory.CreateDirectory(userDir); // Ensure root exists
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string userDir = GetValidatedUserRootPath(userName);
+            Directory.CreateDirectory(userDir);
             string dbPath = Path.Combine(userDir, "userdata.db");
 
-            using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared;");
-            connection.Open();
+            await using var connection = new SqliteConnection($"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared;");
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            // Ensure table exists
-            using (var cmd = new SqliteCommand("CREATE TABLE IF NOT EXISTS Subscriptions (folder_name TEXT PRIMARY KEY);", connection)) {
-                cmd.ExecuteNonQuery();
+            await using (var createCmd = new SqliteCommand(
+                "CREATE TABLE IF NOT EXISTS Subscriptions (folder_name TEXT PRIMARY KEY);",
+                connection))
+            {
+                await createCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            // Remove from subscriptions
-            using (var cmd = new SqliteCommand("DELETE FROM Subscriptions WHERE folder_name = @folderName;", connection)) {
-                cmd.Parameters.AddWithValue("@folderName", folderName);
-                cmd.ExecuteNonQuery();
+            await using (var deleteCmd = new SqliteCommand(
+                "DELETE FROM Subscriptions WHERE folder_name = @folderName;",
+                connection))
+            {
+                deleteCmd.Parameters.AddWithValue("@folderName", folderName);
+                await deleteCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
         #endregion
 
-        #region method Search
+        #region method SearchAsync
 
         /// <summary>
-        /// Executes an IMAP search query against a specified folder's message cache by recursively 
-        /// analyzing the search criteria tree, handling sequence set dependencies via a Common Table Expression (CTE), 
+        /// Asynchronously executes an IMAP search query against a specified folder's message cache by recursively
+        /// analyzing the search criteria tree, handling sequence set dependencies via a Common Table Expression (CTE),
         /// and translating criteria into a parameterized SQLite command.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder being searched.</param>
         /// <param name="searchKey">The root <see cref="IMAP_t_Search_Key"/> criteria tree specifying the search conditions (e.g., flags, text, dates, sequence sets).</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
         /// A list of message unique identifiers (<see cref="long"/> representing <c>MessageUid</c>) that match the evaluated search criteria.
         /// </returns>
-        public List<long> Search(string userName, string folderName, IMAP_t_Search_Key searchKey)
+        public async Task<List<long>> SearchAsync(
+            string userName,
+            string folderName,
+            IMAP_t_Search_Key searchKey,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Check if search criteria contains IMAP_t_Search_Key_SeqSet.
             bool needsSeq = false;
             var queue = new Queue<IMAP_t_Search_Key>();
             queue.Enqueue(searchKey);
-            while (queue.Count > 0) {
+            while (queue.Count > 0)
+            {
                 var current = queue.Dequeue();
                 if (current is IMAP_t_Search_Key_SeqSet) {
                     needsSeq = true;
@@ -420,7 +461,7 @@ namespace lsMailServer.Services
             string sql = needsSeq
                 ? @"WITH numbered_messages AS (
                         SELECT MessageUid, ROW_NUMBER() OVER (ORDER BY MessageUid ASC) as seq_num,
-                               MessageFlags, MessageSize, MessageInternalDate, MessageDate, 
+                               MessageFlags, MessageSize, MessageInternalDate, MessageDate,
                                MessageSubject, MessageSender, MessageRecipient, MessageCc, MessageBcc, HeadersJson
                         FROM FolderMessageCache
                     )
@@ -433,14 +474,14 @@ namespace lsMailServer.Services
 
             var matchingUids = new List<long>();
 
-            var connection = GetFolderCacheConnection(userFolderDirectory);
+            using var connection = GetFolderCacheConnection(userFolderDirectory);
 
-            using var cmd = connection.CreateCommand();
+            await using var cmd = connection.CreateCommand();
             cmd.CommandText = sql;
             cmd.Parameters.AddRange(parameters.ToArray());
 
-            using var reader = cmd.ExecuteReader();
-            while (reader.Read()) {
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                 matchingUids.Add(reader.GetInt64(0));
             }
 
@@ -694,9 +735,9 @@ namespace lsMailServer.Services
         /// </returns>
         public async Task<long?> CopyMessageAsync(string userName, string folderName, long messageUid, string targetFolder)
         {
-            using Stream? msgStream = GetMessageStream(userName, folderName, messageUid, false);
+            using Stream? msgStream = await GetMessageStreamAsync(userName, folderName, messageUid, false);
             if (msgStream != null) {
-                var messageInfo = GetMessageInfo(userName, folderName, messageUid);
+                var messageInfo = await GetMessageInfoAsync(userName, folderName, messageUid);
                 var messageFlags = messageInfo != null ? messageInfo.Value.MessageFlags : [];
 
                 return await StoreMessageAsync(userName, targetFolder, msgStream, messageFlags, DateTime.Now);
@@ -737,7 +778,7 @@ namespace lsMailServer.Services
                     return false;
                 }
 
-                _dbService.UpdateUserStorageUsage(userName, -messageSize);
+                await _dbService.UpdateUserStorageUsageAsync(userName, -messageSize);
             }
 
             const string deleteSql = "DELETE FROM FolderMessageCache WHERE MessageUid = @uid;";
@@ -772,25 +813,33 @@ namespace lsMailServer.Services
 
         #endregion
 
-        #region method GetMessageStream
+        #region method GetMessageStreamAsync
 
         /// <summary>
-        /// Retrieves an optimized, sequential file stream for a specific email message (<c>.eml</c>) 
+        /// Asynchronously prepares and retrieves an optimized, sequential file stream for a specific email message (<c>.eml</c>)
         /// located within a user's mailbox folder, with an optional capability to automatically mark the message as seen.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder containing the message.</param>
         /// <param name="messageUid">The unique identifier (UID) of the message whose stream is being requested.</param>
         /// <param name="markAsSeen">
-        /// Specifies whether to automatically append the <c>\Seen</c> system flag to the message 
+        /// Specifies whether to automatically append the <c>\Seen</c> system flag to the message
         /// upon successful stream retrieval.
         /// </param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// An optimized, sequential <see cref="FileStream"/> configured for asynchronous reading of the raw <c>.eml</c> file, 
+        /// An optimized, sequential <see cref="FileStream"/> configured for asynchronous reading of the raw <c>.eml</c> file,
         /// or <see langword="null"/> if the target message file does not exist on disk.
         /// </returns>
-        public Stream? GetMessageStream(string userName, string folderName, long messageUid, bool markAsSeen)
+        public async Task<Stream?> GetMessageStreamAsync(
+            string userName,
+            string folderName,
+            long messageUid,
+            bool markAsSeen,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // 1. Resolve target folder directory and enforce creation rules
             string userFolderPath = GetValidatedUserFolderPath(userName, folderName);
 
@@ -801,65 +850,78 @@ namespace lsMailServer.Services
                 return null;
             }
 
-            if(markAsSeen){
-                StoreMessageFlags(userName, folderName, messageUid, ["\\Seen"],FlagStoreMode.Add);
+            if (markAsSeen) {
+                await StoreMessageFlagsAsync(
+                    userName,
+                    folderName,
+                    messageUid,
+                    ["\\Seen"],
+                    FlagStoreMode.Add,
+                    cancellationToken).ConfigureAwait(false);
             }
 
             // Open an optimized sequential FileStream for efficient, low-memory streaming
             return new FileStream(
-                emlFilePath, 
-                FileMode.Open, 
-                FileAccess.Read, 
-                FileShare.Read, 
-                bufferSize: 4096, 
-                useAsync: true
-            );
+                emlFilePath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
         }
 
         #endregion
 
-        #region method GetMessageInfo
+        #region method GetMessageInfoAsync
 
         /// <summary>
-        /// Retrieves cached metadata and parsing structures for a specific message by its unique identifier (UID) 
+        /// Asynchronously retrieves cached metadata and parsing structures for a specific message by its unique identifier (UID)
         /// from the specified folder's local SQLite cache database.
         /// </summary>
         /// <param name="userName">The unique username or account identifier associated with the mailbox.</param>
         /// <param name="folderName">The relative path or name of the folder containing the message.</param>
         /// <param name="uid">The unique identifier (UID) of the message whose metadata is being queried.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
-        /// A populated <see cref="MessageInfo"/> instance containing the message metadata, envelope, and body structure, 
+        /// A populated <see cref="MessageInfo"/> instance containing the message metadata, envelope, and body structure,
         /// or <see langword="null"/> if no message with the specified UID exists in the cache.
         /// </returns>
-        public MessageInfo? GetMessageInfo(string userName, string folderName, long uid)
+        public async Task<MessageInfo?> GetMessageInfoAsync(
+            string userName,
+            string folderName,
+            long uid,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // 1. Resolve target folder directory and enforce creation rules
             string userFolderPath = GetValidatedUserFolderPath(userName, folderName);
 
             const string sql = @"
-                SELECT 
-                    MessageUid, Version, MessageInternalDate, MessageDate, MessageSize, 
-                    MessageFlags, MessageSender, MessageRecipient, MessageCc, MessageBcc, 
-                    MessageSubject, Envelope, BodyStructure 
-                FROM FolderMessageCache 
+                SELECT
+                    MessageUid, Version, MessageInternalDate, MessageDate, MessageSize,
+                    MessageFlags, MessageSender, MessageRecipient, MessageCc, MessageBcc,
+                    MessageSubject, Envelope, BodyStructure
+                FROM FolderMessageCache
                 WHERE MessageUid = @uid;
             ";
 
-            using var connection = GetFolderCacheConnection(userFolderPath);
-            connection.Open();
+            await using var connection = GetFolderCacheConnection(userFolderPath);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            using var command = new SqliteCommand(sql, connection);
+            await using var command = new SqliteCommand(sql, connection);
             command.Parameters.AddWithValue("@uid", uid);
 
-            using var reader = command.ExecuteReader();
-            if (reader.Read())
-            {
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) {
                 return new MessageInfo(
                     MessageUid: reader.GetInt64(0),
                     Version: reader.GetInt64(1),
                     MessageInternalDate: DateTime.Parse(reader.GetString(2)),
                     MessageSize: reader.GetInt64(4),
-                    MessageFlags: reader.IsDBNull(5) ? [] : reader.GetString(5).Split(' ',StringSplitOptions.RemoveEmptyEntries),
+                    MessageFlags: reader.IsDBNull(5)
+                        ? []
+                        : reader.GetString(5).Split(' ', StringSplitOptions.RemoveEmptyEntries),
                     MessageDate: reader.IsDBNull(3) ? null : DateTime.Parse(reader.GetString(3)),
                     MessageSender: reader.IsDBNull(6) ? null : reader.GetString(6),
                     MessageTo: reader.IsDBNull(7) ? null : reader.GetString(7),
@@ -1044,18 +1106,18 @@ namespace lsMailServer.Services
                 await messageStream.CopyToAsync(fileStream);
             }
 
-            _dbService.UpdateUserStorageUsage(userName, messageSize);
+            await _dbService.UpdateUserStorageUsageAsync(userName, messageSize);
 
             return assignedUid;
         }
 
         #endregion
 
-        #region method StoreMessageFlags
+        #region method StoreMessageFlagsAsync
 
         /// <summary>
-        /// Updates the message flags for a specific email message within a folder cache, 
-        /// applying changes according to the specified mode and updating both the message 
+        /// Asynchronously updates the message flags for a specific email message within a folder cache,
+        /// applying changes according to the specified mode and updating both the message
         /// record and the folder metadata version using a shared UTC ticks timestamp.
         /// </summary>
         /// <param name="userName">The username owning the mailbox folder.</param>
@@ -1063,20 +1125,30 @@ namespace lsMailServer.Services
         /// <param name="messageUid">The unique identifier (UID) of the message whose flags are being modified.</param>
         /// <param name="flags">The collection of flags to add, remove, or use as a replacement.</param>
         /// <param name="setMode">The operation mode defining how the flags are modified (<see cref="FlagStoreMode.Replace"/>, <see cref="FlagStoreMode.Add"/>, or <see cref="FlagStoreMode.Remove"/>).</param>
-        public void StoreMessageFlags(string userName, string folderName, long messageUid, IEnumerable<string> flags, FlagStoreMode setMode)
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        public async Task StoreMessageFlagsAsync(
+            string userName,
+            string folderName,
+            long messageUid,
+            IEnumerable<string> flags,
+            FlagStoreMode setMode,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // 1. Resolve target folder directory and enforce creation rules
             string userFolderDirectory = GetValidatedUserFolderPath(userName, folderName);
 
-            using var connection = GetFolderCacheConnection(userFolderDirectory);
-            connection.Open();
+            await using var connection = GetFolderCacheConnection(userFolderDirectory);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             // 2. Fetch current flags from SQLite
             string? currentFlags = null;
             const string selectSql = "SELECT MessageFlags FROM FolderMessageCache WHERE MessageUid = @uid;";
-            using (var selectCmd = new SqliteCommand(selectSql, connection)) {
+            await using (var selectCmd = new SqliteCommand(selectSql, connection))
+            {
                 selectCmd.Parameters.AddWithValue("@uid", messageUid);
-                var result = selectCmd.ExecuteScalar();
+                object? result = await selectCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 if (result != null && result != DBNull.Value) {
                     currentFlags = result.ToString();
                 }
@@ -1085,7 +1157,7 @@ namespace lsMailServer.Services
             // Parse into a case-insensitive set to prevent duplicate flags (e.g. \Seen vs \seen)
             var flagsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (!string.IsNullOrWhiteSpace(currentFlags)) {
-                foreach (var f in currentFlags.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) {
+                foreach (string f in currentFlags.Split(' ', StringSplitOptions.RemoveEmptyEntries)) {
                     flagsSet.Add(f);
                 }
             }
@@ -1097,9 +1169,12 @@ namespace lsMailServer.Services
             {
                 case FlagStoreMode.Replace:
                     var newSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var f in flags) {
-                        if (!string.IsNullOrWhiteSpace(f)) newSet.Add(f.Trim());
+                    foreach (string f in flags) {
+                        if (!string.IsNullOrWhiteSpace(f)) {
+                            newSet.Add(f.Trim());
+                        }
                     }
+
                     if (!flagsSet.SetEquals(newSet)) {
                         flagsSet = newSet;
                         modified = true;
@@ -1107,7 +1182,7 @@ namespace lsMailServer.Services
                     break;
 
                 case FlagStoreMode.Add:
-                    foreach (var f in flags) {
+                    foreach (string f in flags) {
                         if (!string.IsNullOrWhiteSpace(f) && flagsSet.Add(f.Trim())) {
                             modified = true;
                         }
@@ -1115,7 +1190,7 @@ namespace lsMailServer.Services
                     break;
 
                 case FlagStoreMode.Remove:
-                    foreach (var f in flags) {
+                    foreach (string f in flags) {
                         if (!string.IsNullOrWhiteSpace(f) && flagsSet.Remove(f.Trim())) {
                             modified = true;
                         }
@@ -1130,28 +1205,28 @@ namespace lsMailServer.Services
 
                 // Update the message record flags and set its version to the shared ticks timestamp
                 const string updateMessageSql = @"
-                    UPDATE FolderMessageCache 
-                    SET MessageFlags = @flags, 
-                        Version = @version 
+                    UPDATE FolderMessageCache
+                    SET MessageFlags = @flags,
+                        Version = @version
                     WHERE MessageUid = @uid;
                 ";
-                using (var updateMsgCmd = new SqliteCommand(updateMessageSql, connection))
+                await using (var updateMsgCmd = new SqliteCommand(updateMessageSql, connection))
                 {
                     updateMsgCmd.Parameters.AddWithValue("@flags", string.IsNullOrEmpty(updatedFlagsString) ? DBNull.Value : updatedFlagsString);
                     updateMsgCmd.Parameters.AddWithValue("@version", newVersion);
                     updateMsgCmd.Parameters.AddWithValue("@uid", messageUid);
-                    updateMsgCmd.ExecuteNonQuery();
+                    await updateMsgCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
                 // Update the folder-level version to match the ticks timestamp
                 const string updateFolderSql = @"
-                    UPDATE FolderInfo 
+                    UPDATE FolderInfo
                     SET Version = @version;
                 ";
-                using (var updateFolderCmd = new SqliteCommand(updateFolderSql, connection))
+                await using (var updateFolderCmd = new SqliteCommand(updateFolderSql, connection))
                 {
                     updateFolderCmd.Parameters.AddWithValue("@version", newVersion);
-                    updateFolderCmd.ExecuteNonQuery();
+                    await updateFolderCmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -1159,11 +1234,40 @@ namespace lsMailServer.Services
         #endregion
 
 
+        #region method GetValidatedUserRootPath
+
+        /// <summary>
+        /// Sanitizes the username and resolves the verified root storage directory for the user's mailbox,
+        /// guarding against directory traversal vulnerabilities.
+        /// </summary>
+        /// <param name="username">The username or account identifier.</param>
+        /// <returns>The verified, absolute root directory path for the user's mailbox.</returns>
+        /// <exception cref="UnauthorizedAccessException">Thrown if the resolved path escapes the mailboxes root directory.</exception>
+        private string GetValidatedUserRootPath(string username)
+        {
+            string safeUsername = username.Trim().ToLowerInvariant()
+                .Replace('@', '_')
+                .Replace('.', '_');
+
+            string mailboxesRoot = Path.GetFullPath(Path.Combine(_baseStoragePath, "Mailboxes"));
+            string userBaseDirectory = Path.GetFullPath(Path.Combine(mailboxesRoot, safeUsername));
+
+            string rootWithSep = mailboxesRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!userBaseDirectory.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new UnauthorizedAccessException("Access denied: Invalid username path traversal detected.");
+            }
+
+            return userBaseDirectory;
+        }
+
+        #endregion
+
         #region method GetValidatedUserFolderPath
 
         /// <summary>
-        /// Sanitizes the username, resolves the absolute storage path, and guards against 
-        /// directory traversal vulnerabilities.
+        /// Sanitizes the username, resolves the absolute storage path for a specific folder,
+        /// and guards against directory traversal vulnerabilities.
         /// </summary>
         /// <param name="username">The username or account identifier.</param>
         /// <param name="folderName">The target folder name.</param>
@@ -1171,22 +1275,13 @@ namespace lsMailServer.Services
         /// <exception cref="UnauthorizedAccessException">Thrown if the resolved path escapes the user's root directory.</exception>
         private string GetValidatedUserFolderPath(string username, string folderName)
         {
-            // 1. Sanitize username
-            string safeUsername = username.Trim().ToLowerInvariant()
-                .Replace('@', '_')
-                .Replace('.', '_');
-
-            // 2. Base directory for this specific user
-            string userBaseDirectory = Path.GetFullPath(Path.Combine(_baseStoragePath, "Mailboxes", safeUsername));
-
-            // 3. Combine and resolve the full target path
-            // (This automatically handles and normalizes '..\', './', etc.)
+            string userBaseDirectory = GetValidatedUserRootPath(username);
             string targetDirectory = Path.GetFullPath(Path.Combine(userBaseDirectory, folderName));
 
-            // 4. SECURITY CHECK: Ensure the target path starts with the user's base directory.
-            // If someone passes folderName = "../../secret", GetFullPath will resolve outside the base path,
-            // causing this check to fail and block the traversal attempt.
-            if (!targetDirectory.StartsWith(userBaseDirectory, StringComparison.OrdinalIgnoreCase)) {
+            string baseWithSep = userBaseDirectory.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (!targetDirectory.StartsWith(baseWithSep, StringComparison.OrdinalIgnoreCase) &&
+                !targetDirectory.Equals(userBaseDirectory, StringComparison.OrdinalIgnoreCase))
+            {
                 throw new UnauthorizedAccessException("Access denied: Invalid folder path traversal detected.");
             }
 
