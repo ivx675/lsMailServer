@@ -27497,10 +27497,18 @@
             <param name="owner">Specifies if SmartStream is owner of <b>stream</b>.</param>
             <exception cref="T:System.ArgumentNullException">Is raised when <b>stream</b> is null.</exception>
         </member>
-        <member name="M:LumiSoft.Net.IO.SmartStream.Dispose">
+        <member name="M:LumiSoft.Net.IO.SmartStream.Dispose(System.Boolean)">
             <summary>
-            Cleans up any resources being used.
+            Releases the resources used by the current <see cref="T:LumiSoft.Net.IO.SmartStream"/> instance.
+            When this instance owns the underlying stream, the wrapped stream is also disposed.
             </summary>
+            <param name="disposing">
+            <see langword="true"/> to release managed resources; otherwise <see langword="false"/>.
+            </param>
+            <remarks>
+            This method is part of the standard .NET disposal pattern. After disposal,
+            all attempts to access the stream will throw <see cref="T:System.ObjectDisposedException"/>.
+            </remarks>
         </member>
         <member name="M:LumiSoft.Net.IO.SmartStream.ReadLine(System.Memory{System.Byte},LumiSoft.Net.IO.SizeExceededAction)">
             <summary>
@@ -28190,12 +28198,6 @@
             </para>
             </remarks>
         </member>
-        <member name="M:LumiSoft.Net.IO.SmartStream.Close">
-            <summary>
-            Closes current stream and releases any resources.
-            </summary>
-            <exception cref="T:System.ObjectDisposedException"></exception>
-        </member>
         <member name="M:LumiSoft.Net.IO.SmartStream.Flush">
             <summary>
             Clears all buffers for this stream and causes any buffered data to be written to the underlying device.
@@ -28883,6 +28885,281 @@
             <summary>
             Gets new log entry.
             </summary>
+        </member>
+        <member name="T:LumiSoft.Net.Mail.DkimService">
+            <summary>
+            Provides RFC 6376 compliant DomainKeys Identified Mail (DKIM) signing and verification
+            using zero-string-allocation byte-level canonicalization and streaming body hashing.
+            </summary>
+        </member>
+        <member name="T:LumiSoft.Net.Mail.DkimService.HeaderField">
+            <summary>
+            Represents a parsed RFC 5322 message header preserving its raw field name bytes, lowercase ASCII name,
+            and raw field value bytes (including original folding).
+            </summary>
+            <param name="RawNameBytes">The exact raw ASCII bytes of the header field name before the colon.</param>
+            <param name="NameLower">The lowercase ASCII header field name used for case-insensitive matching.</param>
+            <param name="RawValueBytes">The exact raw bytes of the header field value after the colon, preserving folding.</param>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.HeaderField.#ctor(System.Byte[],System.String,System.Byte[])">
+            <summary>
+            Represents a parsed RFC 5322 message header preserving its raw field name bytes, lowercase ASCII name,
+            and raw field value bytes (including original folding).
+            </summary>
+            <param name="RawNameBytes">The exact raw ASCII bytes of the header field name before the colon.</param>
+            <param name="NameLower">The lowercase ASCII header field name used for case-insensitive matching.</param>
+            <param name="RawValueBytes">The exact raw bytes of the header field value after the colon, preserving folding.</param>
+        </member>
+        <member name="P:LumiSoft.Net.Mail.DkimService.HeaderField.RawNameBytes">
+            <summary>The exact raw ASCII bytes of the header field name before the colon.</summary>
+        </member>
+        <member name="P:LumiSoft.Net.Mail.DkimService.HeaderField.NameLower">
+            <summary>The lowercase ASCII header field name used for case-insensitive matching.</summary>
+        </member>
+        <member name="P:LumiSoft.Net.Mail.DkimService.HeaderField.RawValueBytes">
+            <summary>The exact raw bytes of the header field value after the colon, preserving folding.</summary>
+        </member>
+        <member name="F:LumiSoft.Net.Mail.DkimService.DefaultSignedHeaders">
+            <summary>
+            Default ordered list of RFC 5322 header fields signed when no custom header list is specified.
+            </summary>
+        </member>
+        <member name="T:LumiSoft.Net.Mail.DkimService.DkimVerificationResult">
+            <summary>
+            Represents the outcome of a DomainKeys Identified Mail (DKIM) signature verification operation.
+            Contains the verification status and, when verification fails, a human-readable explanation
+            describing the reason for the failure.
+            </summary>
+        </member>
+        <member name="P:LumiSoft.Net.Mail.DkimService.DkimVerificationResult.IsValid">
+            <summary>
+            Gets a value indicating whether the DKIM signature was successfully verified.
+            </summary>
+        </member>
+        <member name="P:LumiSoft.Net.Mail.DkimService.DkimVerificationResult.FailureReason">
+            <summary>
+            Gets the verification failure reason when <see cref="P:LumiSoft.Net.Mail.DkimService.DkimVerificationResult.IsValid"/> is <see langword="false"/>.
+            Returns <see langword="null"/> when verification succeeds.
+            </summary>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.DkimVerificationResult.Success">
+            <summary>
+            Creates a successful DKIM verification result.
+            </summary>
+            <returns>A <see cref="T:LumiSoft.Net.Mail.DkimService.DkimVerificationResult"/> indicating successful verification.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.DkimVerificationResult.Fail(System.String)">
+            <summary>
+            Creates a failed DKIM verification result with the specified diagnostic message.
+            </summary>
+            <param name="reason">
+            A human-readable explanation describing why DKIM verification failed.
+            </param>
+            <returns>A <see cref="T:LumiSoft.Net.Mail.DkimService.DkimVerificationResult"/> representing a failed verification.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.CreateSignatureHeaderAsync(System.IO.Stream,System.String,System.String,System.String,System.Collections.Generic.IEnumerable{System.String},System.Threading.CancellationToken)">
+             <summary>
+             Computes a complete <c>DKIM-Signature</c> header value (including the Base64-encoded <c>b=</c> signature)
+             for the provided message stream using an RSA private key and <c>relaxed/relaxed</c> canonicalization.
+             </summary>
+             <param name="messageStream">
+             The raw RFC 5322 email message stream. Must be readable and positioned at the start of the message headers.
+             The stream is left open upon completion, and its position is restored if <see cref="P:System.IO.Stream.CanSeek"/> is <see langword="true"/>.
+             </param>
+             <param name="domain">The signing domain identifier (<c>d=</c> tag), e.g., <c>"example.com"</c>.</param>
+             <param name="selector">The DKIM selector (<c>s=</c> tag) identifying the public key record in DNS, e.g., <c>"default"</c>.</param>
+             <param name="privateKeyPem">The PEM-encoded RSA private key (<c>-----BEGIN PRIVATE KEY-----</c> or <c>-----BEGIN RSA PRIVATE KEY-----</c>).</param>
+             <param name="headersToSign">
+             Optional ordered list of header field names to sign (<c>h=</c> tag). If <see langword="null"/> or empty,
+             <see cref="F:LumiSoft.Net.Mail.DkimService.DefaultSignedHeaders"/> is used.
+             </param>
+             <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+             <returns>
+             A task whose result is the complete formatted
+             <c>DKIM-Signature</c> header value, including all DKIM tags and the
+             Base64-encoded <c>b=</c> signature value, but excluding the
+             <c>"DKIM-Signature:"</c> header field name and colon.
+             </returns>
+             <exception cref="T:System.ArgumentNullException">
+             Thrown if <paramref name="messageStream"/>, <paramref name="domain"/>, <paramref name="selector"/>, or <paramref name="privateKeyPem"/> is <see langword="null"/>.
+             </exception>
+             <exception cref="T:System.ArgumentException">
+             Thrown if <paramref name="messageStream"/> is not readable, if required string parameters are empty, or if the <c>From</c> header is missing.
+             </exception>
+             <exception cref="T:System.Security.Cryptography.CryptographicException">
+             Thrown if the PEM private key cannot be imported or signing fails.
+             </exception>
+             <remarks>
+             The returned value is suitable for insertion as the value of a
+             <c>DKIM-Signature</c> RFC 5322 header field, for example:
+            
+             DKIM-Signature: v=1; a=rsa-sha256; ...
+             </remarks>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.VerifySignatureAsync(System.IO.Stream,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            Verifies the topmost <c>DKIM-Signature</c> header in
+            <paramref name="signedMessageStream"/> against the public key
+            retrieved from DNS and returns the verification result.
+            </summary>
+            <param name="signedMessageStream">
+            The raw RFC 5322 signed email message stream. Must be readable and positioned at the start of the headers.
+            The stream is left open upon completion, and its position is restored if <see cref="P:System.IO.Stream.CanSeek"/> is <see langword="true"/>.
+            </param>
+            <param name="allowSha1">
+            When <see langword="true"/>, allows verifying legacy <c>a=rsa-sha1</c> signatures. Defaults to <see langword="false"/>
+            per RFC 8301, throwing <see cref="T:System.NotSupportedException"/> for <c>rsa-sha1</c>.
+            </param>
+            <param name="cancellationToken">
+            A token to monitor for cancellation requests.
+            </param><returns>
+            A task whose result contains the outcome of the DKIM verification operation.
+            </returns>
+            <exception cref="T:System.ArgumentNullException">
+            Thrown if <paramref name="signedMessageStream"/> is <see langword="null"/>.
+            </exception>
+            <exception cref="T:System.ArgumentException">
+            Thrown if <paramref name="signedMessageStream"/> is not readable.
+            </exception>
+            <exception cref="T:System.NotSupportedException">
+            Thrown when the signature uses an unsupported algorithm, such as
+            <c>ed25519-sha256</c>, a disabled <c>rsa-sha1</c> signature, or an unknown
+            <c>a=</c> algorithm value.
+            </exception>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ReadHeadersAsync(LumiSoft.Net.IO.SmartStream,System.Threading.CancellationToken)">
+            <summary>
+            Reads the RFC 5322 header section from <paramref name="reader"/> as raw byte arrays until the blank separator line,
+            leaving <paramref name="reader"/> positioned at the first byte of the message body.
+            </summary>
+            <param name="reader">The <see cref="T:LumiSoft.Net.IO.SmartStream"/> positioned at the start of the message headers.</param>
+            <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+            <returns>A list of parsed <see cref="T:LumiSoft.Net.Mail.DkimService.HeaderField"/> instances preserving exact raw field name and value bytes.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ComputeHeaderDigest(System.Collections.Generic.IReadOnlyList{LumiSoft.Net.Mail.DkimService.HeaderField},System.Collections.Generic.IReadOnlyList{System.String},System.ReadOnlySpan{System.Byte},System.Boolean,System.Security.Cryptography.HashAlgorithmName)">
+            <summary>
+            Computes the cryptographic digest over the raw bytes of signed headers (selected bottom-up per RFC 6376 §5.4)
+            followed by the canonicalized <c>DKIM-Signature</c> header bytes without a trailing CRLF.
+            </summary>
+            <param name="messageHeaders">All candidate message headers (excluding the <c>DKIM-Signature</c> being verified).</param>
+            <param name="signedHeaderNames">Lowercase header field names listed in the <c>h=</c> tag.</param>
+            <param name="unsignedDkimRawValueBytes">Raw bytes of the <c>DKIM-Signature</c> header value with the <c>b=</c> value removed.</param>
+            <param name="isRelaxedHeader"><see langword="true"/> for <c>relaxed</c> header canonicalization; <see langword="false"/> for <c>simple</c>.</param>
+            <param name="hashAlgorithm">The cryptographic hash algorithm.</param>
+            <returns>The raw cryptographic digest bytes to sign or verify.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ComputeStreamingBodyHashBase64Async(LumiSoft.Net.IO.SmartStream,System.Boolean,System.Security.Cryptography.HashAlgorithmName,System.Threading.CancellationToken)">
+            <summary>
+            Streams raw body bytes from <paramref name="reader"/> directly into <see cref="T:System.Security.Cryptography.IncrementalHash"/>
+            in O(1) memory without any string allocation, according to RFC 6376 §3.4.3 (<c>simple</c>) or §3.4.4 (<c>relaxed</c>).
+            </summary>
+            <param name="reader">The <see cref="T:LumiSoft.Net.IO.SmartStream"/> positioned at the first byte of the message body.</param>
+            <param name="isRelaxedBody"><see langword="true"/> for <c>relaxed</c> body canonicalization; <see langword="false"/> for <c>simple</c>.</param>
+            <param name="hashAlgorithm">The cryptographic hash algorithm (e.g., <see cref="P:System.Security.Cryptography.HashAlgorithmName.SHA256"/>).</param>
+            <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+            <returns>The Base64-encoded canonicalized body digest (<c>bh=</c> value).</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.AppendCanonicalizedHeaderBytes(System.Security.Cryptography.IncrementalHash,System.ReadOnlySpan{System.Byte},System.ReadOnlySpan{System.Byte},System.Boolean,System.Boolean)">
+            <summary>
+            Appends a single canonicalized header field directly as bytes to <paramref name="hasher"/>
+            according to RFC 6376 §3.4.1 (<c>simple</c>) or §3.4.2 (<c>relaxed</c>).
+            </summary>
+            <param name="hasher">The incremental hash accumulator.</param>
+            <param name="rawNameBytes">Raw ASCII bytes of the header field name.</param>
+            <param name="rawValueBytes">Raw bytes of the header field value (after the colon).</param>
+            <param name="isRelaxedHeader"><see langword="true"/> for <c>relaxed</c>; <see langword="false"/> for <c>simple</c>.</param>
+            <param name="appendCrlf"><see langword="true"/> to append a trailing <c>\r\n</c>; <see langword="false"/> for the final <c>DKIM-Signature</c> header.</param>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.CanonicalizeRelaxedBodyLineBytes(System.ReadOnlySpan{System.Byte},System.Span{System.Byte})">
+            <summary>
+            Canonicalizes a single body line for RFC 6376 §3.4.4 (<c>relaxed</c> body canonicalization)
+            by collapsing every contiguous run of ASCII space (<c>0x20</c>) and tab (<c>0x09</c>) bytes into a single <c>0x20</c> byte.
+            </summary>
+            <param name="sourceLine">The right-trimmed body line byte span.</param>
+            <param name="destination">The destination span receiving the canonicalized body line bytes.</param>
+            <returns>The number of bytes written to <paramref name="destination"/>.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.CanonicalizeRelaxedHeaderValueBytes(System.ReadOnlySpan{System.Byte},System.Span{System.Byte})">
+            <summary>
+            Unfolds line breaks (<c>\r</c>/<c>\n</c>), collapses contiguous WSP into a single <c>0x20</c>,
+            and strips leading and trailing WSP bytes per RFC 6376 §3.4.2.
+            </summary>
+            <param name="source">The raw header value bytes.</param>
+            <param name="destination">The destination buffer receiving canonicalized header value bytes.</param>
+            <returns>The number of bytes written to <paramref name="destination"/>.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.TrimEndWsp(System.ReadOnlySpan{System.Byte})">
+            <summary>
+            Trims trailing ASCII space (<c>0x20</c>) and horizontal tab (<c>0x09</c>) bytes.
+            </summary>
+            <param name="span">The input byte span.</param>
+            <returns>A slice of <paramref name="span"/> without trailing space or tab bytes.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.StripBTagValueBytes(System.ReadOnlySpan{System.Byte})">
+            <summary>
+            Removes the signature payload bytes from the <c>b=</c> tag in a raw <c>DKIM-Signature</c> header byte slice
+            while preserving all surrounding bytes, whitespace, folding, and tags (RFC 6376 §3.7).
+            </summary>
+            <param name="rawDkimBytes">The raw bytes of the <c>DKIM-Signature</c> header value.</param>
+            <returns>A copy of <paramref name="rawDkimBytes"/> with the <c>b=</c> value stripped.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.IsHeaderWspOrCrlf(System.Byte)">
+            <summary>
+            Determines whether the specified byte is ASCII whitespace or line-break (<c>0x20</c>, <c>0x09</c>, <c>0x0D</c>, or <c>0x0A</c>).
+            </summary>
+            <param name="b">The byte to test.</param>
+            <returns><see langword="true"/> if <paramref name="b"/> is whitespace or CR/LF; otherwise <see langword="false"/>.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ParseCanonicalizationTag(System.String)">
+            <summary>
+            Parses the <c>c=</c> canonicalization tag (<c>header/body</c> or <c>header</c>) into boolean flags.
+            </summary>
+            <param name="cTagValue">The raw <c>c=</c> tag value, or <see langword="null"/> if omitted.</param>
+            <returns>A tuple indicating whether header and body canonicalization are <c>relaxed</c> (<see langword="true"/>) or <c>simple</c> (<see langword="false"/>).</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ParseDkimTags(System.String)">
+            <summary>
+            Parses a semicolon-delimited DKIM tag-value list (RFC 6376 §3.2) into a case-insensitive dictionary.
+            </summary>
+            <param name="tagList">The unfolded tag-value string.</param>
+            <returns>A dictionary mapping tag names to their raw values.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ExtractPemFromDnsRecord(System.String)">
+            <summary>
+            Extracts the Base64 <c>p=</c> public key from a DNS TXT record string and formats it as a PEM SubjectPublicKeyInfo block.
+            </summary>
+            <param name="dnsRecordOrPem">Either a raw DKIM DNS TXT record (<c>"v=DKIM1; k=rsa; p=..."</c>) or an already-formatted PEM public key.</param>
+            <returns>A PEM-formatted public key string, or <see cref="F:System.String.Empty"/> if the key is missing or revoked (<c>p=</c> empty).</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.ResolveDkimPublicKeyFromDnsAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Queries DNS TXT records for a DKIM selector (<c>{selector}._domainkey.{domain}</c>) using <see cref="P:LumiSoft.Net.DNS.Client.DNS_Client.Static"/>
+            and extracts the <c>p=</c> public key value.
+            </summary>
+            <param name="domain">The signing domain from the <c>d=</c> tag.</param>
+            <param name="selector">The selector from the <c>s=</c> tag.</param>
+            <param name="cancellationToken">
+            A token to monitor for cancellation requests.
+            </param>
+            <returns>
+            The value of the DNS DKIM public-key record, or
+            <see langword="null"/> if no matching record was found.
+            </returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.FoldBase64(System.String,System.Int32)">
+            <summary>
+            Folds a long Base64 signature string across lines with CRLF + leading space to stay within RFC 5322 line length limits.
+            </summary>
+            <param name="base64">The unfolded Base64 string.</param>
+            <param name="lineWidth">Maximum characters per folded chunk.</param>
+            <returns>The folded Base64 string.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.Mail.DkimService.RemoveAllWhitespace(System.String)">
+            <summary>
+            Strips all ASCII whitespace and line-break characters from a string.
+            </summary>
+            <param name="input">The input string.</param>
+            <returns>A string with all whitespace characters removed.</returns>
         </member>
         <member name="T:LumiSoft.Net.Mail.Mail_h_AddressList">
              <summary>

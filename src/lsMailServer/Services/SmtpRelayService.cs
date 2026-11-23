@@ -11,6 +11,7 @@ using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Mail;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using static lsMailServer.RestApi.RelayQueueController;
@@ -231,6 +232,7 @@ namespace lsMailServer.Services
 
         private readonly ILogger<SmtpRelayService> _logger;
         private readonly IConfiguration _configuration;
+        private readonly IDatabaseService _dbService;
         private readonly string _relayDir;
         private readonly string _retryDir;
 
@@ -268,14 +270,17 @@ namespace lsMailServer.Services
         /// </summary>
         /// <param name="logger">The logger instance for tracking outbound relay operations and delivery statuses.</param>
         /// <param name="configuration">The application configuration provider for reading relay settings.</param>
+        /// <param name="dbService">The database service handling user metadata, quotas, and system-level database operations.</param>
         /// <param name="baseStoragePath">The root physical storage path on disk where queues reside.</param>
         public SmtpRelayService(
             ILogger<SmtpRelayService> logger, 
-            IConfiguration configuration, 
+            IConfiguration configuration,
+            IDatabaseService dbService,
             string baseStoragePath)
         {
             _logger = logger;
             _configuration = configuration;
+            _dbService = dbService;
 
             _relayDir = Path.Combine(baseStoragePath, "_queues", "relay");
             _retryDir = Path.Combine(baseStoragePath, "_queues", "retry");
@@ -1073,16 +1078,43 @@ namespace lsMailServer.Services
 
             string uniqueId = $"{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Random.Shared.Next():x8}";
             string emlPath = Path.Combine(_relayDir, $"{uniqueId}.eml");
-            string metaPath = Path.Combine(_relayDir, $"{uniqueId}.json");
+            string metaPath = Path.Combine(_relayDir, $"{uniqueId}.json");            
 
-            // 1. Stream raw MIME message to disk
+            // 1. Sign message with DKIM, if enabled
+            byte[]? dkimHeader = null;
+            var domain = await _dbService.GetDomainAsync(new MailAddress(mailFrom).Host);        
+            if(domain != null && domain.IsDkimEnabled) {
+                if(string.IsNullOrEmpty(domain.DkimPrivateKey)) {
+                    _logger.LogWarning("DKIM signing is enabled, but private key is missing.");
+                }
+                else if(string.IsNullOrEmpty(domain.DkimSelector)) {
+                    _logger.LogWarning("DKIM selector value is not specified.");
+                } 
+                else {
+                    stream.Position = 0;
+                    string dkimSignature = await DkimService.CreateSignatureHeaderAsync(
+                        stream,
+                        domain.Name,
+                        domain.DkimSelector,
+                        domain.DkimPrivateKey,
+                        null,
+                        cancellationToken);
+
+                    dkimHeader = Encoding.ASCII.GetBytes($"DKIM-Signature: {dkimSignature}\r\n");
+                }
+            }
+
+            // 2. Stream raw MIME message to disk
             using (var fileStream = new FileStream(emlPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true)) {
                 stream.Position = 0;
+                if(dkimHeader != null) {
+                    await fileStream.WriteAsync(dkimHeader);
+                }
                 await stream.CopyToAsync(fileStream, cancellationToken).ConfigureAwait(false);
                 await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            // 2. Extract recipient domain directly from the passed rcptTo address
+            
+            // 3. Extract recipient domain directly from the passed rcptTo address
             string recipientDomain = "unknown.local";
             try {
                 var parsedMail = new MailAddress(rcptTo);
@@ -1092,7 +1124,7 @@ namespace lsMailServer.Services
                 _logger.LogWarning(ex, "Failed to parse domain from recipient address '{Recipient}', defaulting to 'unknown.local'", rcptTo);
             }
 
-            // 3. Write companion metadata file
+            // 4. Write companion metadata file
             var metadata = new QueueMetadata
             {
                 SmtpUtf8 = smtpUtf8,

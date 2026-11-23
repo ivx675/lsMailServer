@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,8 +6,11 @@
     <title>Mail Server Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col">
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col font-['Inter',sans-serif]">
 
     <!-- Top Navigation Header -->
     <header class="bg-slate-800 border-b border-slate-700 px-6 py-4 flex justify-between items-center shadow-md">
@@ -17,7 +20,7 @@
             </div>
             <div>
                 <h1 class="text-xl font-bold tracking-tight">Mail Server Admin</h1>
-                <p class="text-xs text-slate-400">Database & Server Management Console</p>
+                <p class="text-xs text-slate-400">Database &amp; Server Management Console</p>
             </div>
         </div>
         <div class="flex items-center space-x-3">
@@ -38,7 +41,7 @@
             <i class="fa-solid fa-globe"></i><span>Domains</span>
         </button>
         <button onclick="switchTab('users')" id="tab-users" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
-            <i class="fa-solid fa-users"></i><span>Users & Mailboxes</span>
+            <i class="fa-solid fa-users"></i><span>Users &amp; Mailboxes</span>
         </button>
         <button onclick="switchTab('queue')" id="tab-queue" class="py-3 px-4 border-b-2 font-medium text-sm transition-colors border-transparent text-slate-400 hover:text-slate-200 flex items-center space-x-2 whitespace-nowrap">
             <i class="fa-solid fa-envelope-open-text"></i><span>Relay Queue</span>
@@ -91,6 +94,7 @@
                             <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
                                 <th class="py-3 px-6">Domain Name</th>
                                 <th class="py-3 px-6">Description</th>
+                                <th class="py-3 px-6 text-center">DKIM</th>
                                 <th class="py-3 px-6 text-center">Active</th>
                                 <th class="py-3 px-6 text-right">Actions</th>
                             </tr>
@@ -318,7 +322,6 @@
             </div>
         </section>
 
-
         <!-- ================= SERVER LOGS TAB ================= -->
         <section id="section-logs" class="hidden space-y-6">
             <!-- Top Source Toggle & Actions Bar -->
@@ -479,11 +482,6 @@
                 </div>
 
                 <div class="flex items-center justify-between pt-3 border-t border-slate-700">
-                    <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
-                    <button type="button" onclick="openDeleteConfirmModal('queue-item')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
-                        <i class="fa-solid fa-trash-can"></i><span>Delete Message</span>
-                    </button>
-                    -->
                     <div></div>
                     <button type="button" onclick="closeQueueDetailsModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Close</button>
                 </div>
@@ -529,70 +527,147 @@
         </div>
     </div>
 
-    <!-- ================= CREATE DOMAIN MODAL ================= -->
-    <div id="createDomainModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
-                <h3 class="font-bold text-base flex items-center space-x-2">
-                    <i class="fa-solid fa-globe text-blue-500"></i><span>Create New Domain</span>
-                </h3>
-                <button onclick="closeCreateDomainModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+    <!-- ================= UNIFIED DOMAIN MODAL (CREATE & UPDATE MODE) ================= -->
+    <div id="domainModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-3">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col">
+            <!-- Modal Header -->
+            <div class="px-5 py-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <div class="flex items-center space-x-2.5">
+                    <i id="domainModalIcon" class="fa-solid fa-globe text-blue-500 text-sm"></i>
+                    <h3 id="domainModalTitle" class="font-bold text-sm text-slate-100">Create New Domain</h3>
+                    <span id="domainModalModeBadge" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-500/15 text-blue-400 border border-blue-500/30">New</span>
+                </div>
+                <button onclick="closeDomainModal()" class="text-slate-400 hover:text-slate-200 p-1"><i class="fa-solid fa-xmark text-base"></i></button>
             </div>
-            <form id="createDomainForm" onsubmit="handleCreateDomain(event)" class="p-6 space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Domain Name</label>
-                    <input type="text" id="newDomainName" required placeholder="e.g. example.com"
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description (Optional)</label>
-                    <textarea id="newDomainDesc" rows="2" placeholder="Internal notes or organization..."
-                              class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100"></textarea>
-                </div>
-                <div class="flex items-center space-x-2 pt-2">
-                    <input type="checkbox" id="newDomainEnabled" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
-                    <label for="newDomainEnabled" class="text-sm font-medium text-slate-300">Enable routing immediately</label>
-                </div>
-                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
-                    <button type="button" onclick="closeCreateDomainModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Create Domain</button>
-                </div>
-            </form>
-        </div>
-    </div>
 
-    <!-- ================= EDIT DOMAIN MODAL ================= -->
-    <div id="editDomainModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
-                <h3 class="font-bold text-base flex items-center space-x-2">
-                    <i class="fa-solid fa-pen-to-square text-blue-500"></i><span>Edit Domain</span>
-                </h3>
-                <button onclick="closeEditDomainModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
-            </div>
-            <form id="editDomainForm" onsubmit="handleUpdateDomain(event)" class="p-6 space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Domain Name (Read-Only)</label>
-                    <input type="text" id="editDomainNameDisplay" disabled
-                           class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-400 cursor-not-allowed">
+            <!-- Modal Form Body -->
+            <form id="domainForm" onsubmit="handleSaveDomain(event)" class="p-5 space-y-4">
+                <!-- General Domain Settings (2-Column Grid) -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                    <div class="md:col-span-5">
+                        <label for="domainNameInput" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+                            Domain Name <span id="domainNameReadonlyTag" class="hidden text-[10px] font-normal normal-case text-slate-500">(Read-Only)</span>
+                        </label>
+                        <input type="text" id="domainNameInput" required placeholder="e.g. example.com"
+                               class="w-full h-8 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <div class="md:col-span-5">
+                        <label for="domainDescInput" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Description</label>
+                        <input type="text" id="domainDescInput" placeholder="Internal notes or organization..."
+                               class="w-full h-8 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                    </div>
+                    <div class="md:col-span-2 flex items-center h-8">
+                        <label for="domainEnabledInput" class="inline-flex items-center space-x-2 cursor-pointer select-none">
+                            <input type="checkbox" id="domainEnabledInput" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                            <span class="text-xs font-medium text-slate-200">Enabled</span>
+                        </label>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description</label>
-                    <textarea id="editDomainDesc" rows="2" placeholder="Internal notes..."
-                              class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100"></textarea>
+
+                <!-- DKIM Outbound Signing Section -->
+                <div class="pt-3.5 border-t border-slate-700/80 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-key text-blue-400 text-xs"></i>
+                            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-300">DKIM Outbound Signing</span>
+                        </div>
+                        <span id="domainDkimBadge" class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-700/70 text-slate-400 border border-slate-600/50">Save domain first</span>
+                    </div>
+
+                    <!-- Notice shown only in Create Mode -->
+                    <div id="domainDkimCreateNotice" class="bg-slate-900/60 border border-slate-700/70 rounded-lg px-3 py-2 text-xs text-slate-400 flex items-center space-x-2">
+                        <i class="fa-solid fa-circle-info text-blue-400"></i>
+                        <span>Save the domain first to generate a 2048-bit RSA DKIM keypair and configure DNS signing.</span>
+                    </div>
+
+                    <!-- DKIM Controls (Shown in Update Mode) -->
+                    <div id="domainDkimControls" class="hidden space-y-3">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                            <!-- Enable Toggle -->
+                            <div class="md:col-span-6 flex items-center justify-between bg-slate-900/60 border border-slate-700/70 rounded-lg px-3 py-2">
+                                <div class="pr-2">
+                                    <label for="domainDkimEnabledInput" class="text-xs font-medium text-slate-200 cursor-pointer block">Enable DKIM signing</label>
+                                    <p id="domainDkimHint" class="text-[11px] text-slate-500 leading-tight mt-0.5">Generate a keypair before enabling.</p>
+                                </div>
+                                <input type="checkbox" id="domainDkimEnabledInput" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
+                            </div>
+
+                            <!-- Selector + Generate Button -->
+                            <div class="md:col-span-6">
+                                <label for="domainDkimSelectorInput" class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">DKIM Selector</label>
+                                <div class="flex space-x-2">
+                                    <input type="text" id="domainDkimSelectorInput" oninput="syncDkimHostPreview()" placeholder="default"
+                                           class="flex-1 h-8 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                                    <button type="button" id="generateDkimKeyBtn" onclick="handleGenerateDkimKey()"
+                                            class="h-8 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                                        <i class="fa-solid fa-wand-magic-sparkles text-blue-400 text-[11px]"></i>
+                                        <span id="generateDkimKeyBtnText">Generate Key</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- DNS TXT Record Copy Helpers (2-Column Compact Layout) -->
+                        <div id="domainDkimDnsBox" class="hidden bg-slate-950/70 border border-slate-700/80 rounded-xl p-3.5 space-y-2.5">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">DNS TXT Record Configuration</span>
+                                <span class="text-[11px] text-slate-500">2048-bit RSA</span>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                                <!-- Left Column: Two Host / Record Name Copy Boxes -->
+                                <div class="md:col-span-5 space-y-2">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <label class="text-[10px] uppercase font-semibold text-slate-500">Host / Record Name (FQDN)</label>
+                                            <button type="button" onclick="copyDkimField('domainDkimRecordName', 'FQDN host name')"
+                                                    class="text-[11px] text-blue-400 hover:text-blue-300 flex items-center space-x-1">
+                                                <i class="fa-regular fa-copy"></i><span>Copy</span>
+                                            </button>
+                                        </div>
+                                        <input type="text" id="domainDkimRecordName" readonly
+                                               class="w-full h-8 px-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-200 focus:outline-none">
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <label class="text-[10px] uppercase font-semibold text-slate-500">Subdomain Host (Auto-Zone)</label>
+                                            <button type="button" onclick="copyDkimField('domainDkimSubdomainName', 'Subdomain host')"
+                                                    class="text-[11px] text-blue-400 hover:text-blue-300 flex items-center space-x-1">
+                                                <i class="fa-regular fa-copy"></i><span>Copy</span>
+                                            </button>
+                                        </div>
+                                        <input type="text" id="domainDkimSubdomainName" readonly
+                                               class="w-full h-8 px-2.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-200 focus:outline-none">
+                                    </div>
+                                </div>
+
+                                <!-- Right Column: Expanded TXT Value Box -->
+                                <div class="md:col-span-7">
+                                    <div class="flex items-center justify-between mb-1">
+                                        <label class="text-[10px] uppercase font-semibold text-slate-500">TXT Value</label>
+                                        <button type="button" onclick="copyDkimField('domainDkimRecordValue', 'DNS TXT value')"
+                                                class="text-[11px] text-blue-400 hover:text-blue-300 flex items-center space-x-1">
+                                            <i class="fa-regular fa-copy"></i><span>Copy</span>
+                                        </button>
+                                    </div>
+                                    <textarea id="domainDkimRecordValue" rows="5" readonly
+                                              class="w-full h-24 px-2.5 py-2 bg-slate-900 border border-slate-800 rounded text-[11px] leading-relaxed font-mono text-emerald-300 focus:outline-none break-all resize-none"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="flex items-center space-x-2 pt-2">
-                    <input type="checkbox" id="editDomainEnabled" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
-                    <label for="editDomainEnabled" class="text-sm font-medium text-slate-300">Enable routing</label>
-                </div>
-                <!-- Delete & Save actions inside modal -->
-                <div class="flex items-center justify-between pt-4 border-t border-slate-700">
-                    <button type="button" onclick="openDeleteConfirmModal('domain')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
-                        <i class="fa-solid fa-trash-can"></i><span>Delete Domain</span>
-                    </button>
+
+                <!-- Modal Footer Actions -->
+                <div class="flex items-center justify-between pt-3.5 border-t border-slate-700">
+                    <div>
+                        <button type="button" id="domainDeleteBtn" onclick="openDeleteConfirmModal('domain')"
+                                class="hidden h-8 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
+                            <i class="fa-solid fa-trash-can"></i><span>Delete Domain</span>
+                        </button>
+                    </div>
                     <div class="flex space-x-2">
-                        <button type="button" onclick="closeEditDomainModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Save Changes</button>
+                        <button type="button" onclick="closeDomainModal()" class="h-8 px-3.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors">Close</button>
+                        <button type="submit" id="domainSaveBtn" class="h-8 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors shadow">Create Domain</button>
                     </div>
                 </div>
             </form>
@@ -648,6 +723,10 @@
                         <input type="number" id="newUserMaxSends" value="500" required min="0"
                                class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
                     </div>
+                </div>
+                <div class="flex items-center space-x-2 pt-1">
+                    <input type="checkbox" id="newUserEnabled" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                    <label for="newUserEnabled" class="text-sm font-medium text-slate-300 cursor-pointer">Account Enabled</label>
                 </div>
                 <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
                     <button type="button" onclick="closeCreateUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
@@ -730,7 +809,7 @@
 
                 <!-- Email Aliases Section -->
                 <div class="pt-4 border-t border-slate-700 space-y-3">
-                    <label class="block text-xs font-semibold uppercase text-slate-400">Assigned Email Addresses & Aliases</label>
+                    <label class="block text-xs font-semibold uppercase text-slate-400">Assigned Email Addresses &amp; Aliases</label>
                     <div class="flex space-x-2">
                         <input type="email" id="newUserAliasInput" placeholder="user@domain.com"
                                class="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
@@ -771,7 +850,7 @@
         </div>
     </div>
 
-    <!-- JavaScript Application Logic -->
+    <!-- Application Logic -->
     <script>
         const AUTH_API = '/api/auth';
         const DOMAINS_API = '/api/domains';
@@ -799,6 +878,8 @@
         let pendingDeleteQueueId = null;
         let pendingDisconnectSession = null; // { protocol, id }
         let currentTab = 'domains';
+        let domainModalMode = 'create'; // 'create' | 'update'
+        let currentEditingDomain = null;
 
         // Authenticated Fetch Wrapper (Automatically detects 401 session expiry)
         async function apiFetch(url, options = {}) {
@@ -905,6 +986,7 @@
         // Handle Logout
         async function handleLogout() {
             clearInterval(sessionsRefreshTimer);
+            clearInterval(logsRefreshTimer);
             try {
                 await fetch(`${AUTH_API}/logout`, {
                     method: 'POST',
@@ -1023,7 +1105,7 @@
         }
 
         // ==========================================
-        // DOMAINS LOGIC
+        // DOMAINS & DKIM LOGIC
         // ==========================================
         async function loadDomains() {
             const search = document.getElementById('domainSearch').value.trim();
@@ -1045,6 +1127,18 @@
             }
         }
 
+        function formatDomainDkimBadge(domain) {
+            const hasKey = Boolean(domain.dkimPublicKey && domain.dkimPublicKey.trim().length > 0);
+            if (domain.isDkimEnabled && hasKey) {
+                const sel = domain.dkimSelector ? ` (${escapeHtml(domain.dkimSelector)})` : '';
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-key mr-1.5 text-[10px]"></i>Active${sel}</span>`;
+            }
+            if (hasKey) {
+                return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">Key Ready</span>`;
+            }
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-700/60 text-slate-400 border border-slate-600/40">Off</span>`;
+        }
+
         function renderDomainsTable(domains) {
             const tbody = document.getElementById('domainsTableBody');
             const emptyState = document.getElementById('domainsEmptyState');
@@ -1061,6 +1155,7 @@
                 tr.className = 'hover:bg-slate-900/30 transition-colors border-b border-slate-700/50';
 
                 const descText = d.description ? escapeHtml(d.description) : '<span class="text-slate-500 italic">No description</span>';
+                const dkimBadge = formatDomainDkimBadge(d);
                 const statusBadge = d.isEnabled
                     ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-emerald-400 rounded-full"></span>Enabled</span>'
                     : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
@@ -1068,98 +1163,313 @@
                 const escapedNameForJs = d.name.replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                            <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
-                                <i class="fa-solid fa-globe text-blue-400 text-xs"></i>
-                                <span>${escapeHtml(d.name)}</span>
-                            </td>
-                            <td class="py-3.5 px-6 text-slate-300">${descText}</td>
-                            <td class="py-3.5 px-6 text-center">${statusBadge}</td>
-                            <td class="py-3.5 px-6 text-right">
-                                <button onclick="openEditDomainModal('${escapedNameForJs}')"
-                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                    <i class="fa-solid fa-gear mr-1"></i> Manage
-                                </button>
-                            </td>
-                        `;
+                    <td class="py-3.5 px-6 font-medium text-slate-100 flex items-center space-x-2">
+                        <i class="fa-solid fa-globe text-blue-400 text-xs"></i>
+                        <span>${escapeHtml(d.name)}</span>
+                    </td>
+                    <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                    <td class="py-3.5 px-6 text-center whitespace-nowrap">${dkimBadge}</td>
+                    <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
+                    <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                        <button onclick="openEditDomainModal('${escapedNameForJs}')"
+                            class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                            <i class="fa-solid fa-gear mr-1"></i> Manage
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
         }
 
-        function openCreateDomainModal() {
-            document.getElementById('newDomainName').value = '';
-            document.getElementById('newDomainDesc').value = '';
-            document.getElementById('newDomainEnabled').checked = true;
-            document.getElementById('createDomainModal').classList.remove('hidden');
-        }
-        function closeCreateDomainModal() {
-            document.getElementById('createDomainModal').classList.add('hidden');
+        function syncDkimHostPreview() {
+            if (!currentEditingDomain) return;
+            const rawSel = (document.getElementById('domainDkimSelectorInput').value || '').trim().toLowerCase();
+            const effectiveSelector = rawSel || 'default';
+            document.getElementById('domainDkimRecordName').value = `${effectiveSelector}._domainkey.${currentEditingDomain}`;
+            document.getElementById('domainDkimSubdomainName').value = `${effectiveSelector}._domainkey`;
         }
 
-        async function handleCreateDomain(e) {
-            e.preventDefault();
-            const payload = {
-                domainName: document.getElementById('newDomainName').value.trim(),
-                description: document.getElementById('newDomainDesc').value.trim() || null,
-                isEnabled: document.getElementById('newDomainEnabled').checked
-            };
+        function refreshEditDomainDkimUi(domain) {
+            const hasKey = Boolean(domain.dkimPublicKey && domain.dkimPublicKey.trim().length > 0);
+            const selector = (domain.dkimSelector || '').trim();
+            const dkimToggle = document.getElementById('domainDkimEnabledInput');
+            const hint = document.getElementById('domainDkimHint');
+            const badge = document.getElementById('domainDkimBadge');
+            const genBtnText = document.getElementById('generateDkimKeyBtnText');
+            const dnsBox = document.getElementById('domainDkimDnsBox');
 
-            try {
-                const res = await apiFetch(DOMAINS_API, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.error || 'Failed to create domain');
-                }
-                closeCreateDomainModal();
-                showToast(`Domain "${payload.domainName}" created successfully!`);
-                loadDomains();
-            } catch (err) {
-                showToast(err.message, true);
+            dkimToggle.disabled = !hasKey;
+            dkimToggle.checked = hasKey && Boolean(domain.isDkimEnabled);
+
+            if (hasKey) {
+                genBtnText.textContent = 'Rotate Key';
+                hint.textContent = 'Publish DNS TXT record before enabling.';
+                badge.className = domain.isDkimEnabled
+                    ? 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                    : 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                badge.textContent = domain.isDkimEnabled ? 'Signing Enabled' : 'Key Configured';
+
+                const effectiveSelector = selector || 'default';
+                document.getElementById('domainDkimRecordName').value = `${effectiveSelector}._domainkey.${domain.name}`;
+                document.getElementById('domainDkimSubdomainName').value = `${effectiveSelector}._domainkey`;
+                document.getElementById('domainDkimRecordValue').value = `v=DKIM1; k=rsa; p=${domain.dkimPublicKey}`;
+                dnsBox.classList.remove('hidden');
+            } else {
+                genBtnText.textContent = 'Generate Key';
+                hint.textContent = 'Generate a 2048-bit RSA keypair first.';
+                badge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-700/70 text-slate-400 border border-slate-600/50';
+                badge.textContent = 'No Key';
+                dnsBox.classList.add('hidden');
             }
         }
 
-        let currentEditingDomain = null;
+        function configureDomainModalForCreate() {
+            domainModalMode = 'create';
+            currentEditingDomain = null;
+
+            document.getElementById('domainModalIcon').className = 'fa-solid fa-globe text-blue-500 text-sm';
+            document.getElementById('domainModalTitle').textContent = 'Create New Domain';
+            const modeBadge = document.getElementById('domainModalModeBadge');
+            modeBadge.textContent = 'Create Mode';
+            modeBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-500/15 text-blue-400 border border-blue-500/30';
+
+            const nameInput = document.getElementById('domainNameInput');
+            nameInput.value = '';
+            nameInput.disabled = false;
+            nameInput.className = 'w-full h-8 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500';
+            document.getElementById('domainNameReadonlyTag').classList.add('hidden');
+
+            document.getElementById('domainDescInput').value = '';
+            document.getElementById('domainEnabledInput').checked = true;
+
+            const dkimBadge = document.getElementById('domainDkimBadge');
+            dkimBadge.textContent = 'Available after save';
+            dkimBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-700/70 text-slate-400 border border-slate-600/50';
+
+            document.getElementById('domainDkimCreateNotice').classList.remove('hidden');
+            document.getElementById('domainDkimControls').classList.add('hidden');
+            document.getElementById('domainDeleteBtn').classList.add('hidden');
+            document.getElementById('domainSaveBtn').textContent = 'Create Domain';
+        }
+
+        function configureDomainModalForUpdate(domain) {
+            domainModalMode = 'update';
+            currentEditingDomain = domain.name;
+
+            document.getElementById('domainModalIcon').className = 'fa-solid fa-pen-to-square text-blue-500 text-sm';
+            document.getElementById('domainModalTitle').textContent = `Manage Domain: ${domain.name}`;
+            const modeBadge = document.getElementById('domainModalModeBadge');
+            modeBadge.textContent = 'Update Mode';
+            modeBadge.className = 'inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-emerald-500/15 text-emerald-400 border border-emerald-500/30';
+
+            const nameInput = document.getElementById('domainNameInput');
+            nameInput.value = domain.name;
+            nameInput.disabled = true;
+            nameInput.className = 'w-full h-8 px-2.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-400 cursor-not-allowed';
+            document.getElementById('domainNameReadonlyTag').classList.remove('hidden');
+
+            document.getElementById('domainDescInput').value = domain.description || '';
+            document.getElementById('domainEnabledInput').checked = Boolean(domain.isEnabled);
+            document.getElementById('domainDkimSelectorInput').value = domain.dkimSelector || 'default';
+
+            document.getElementById('domainDkimCreateNotice').classList.add('hidden');
+            document.getElementById('domainDkimControls').classList.remove('hidden');
+            document.getElementById('domainDeleteBtn').classList.remove('hidden');
+            document.getElementById('domainSaveBtn').textContent = 'Save Changes';
+
+            refreshEditDomainDkimUi(domain);
+        }
+
+        function openCreateDomainModal() {
+            configureDomainModalForCreate();
+            document.getElementById('domainModal').classList.remove('hidden');
+            document.getElementById('domainNameInput').focus();
+        }
 
         function openEditDomainModal(name) {
             const domain = domainsCache.find(d => d.name === name);
             if (!domain) return;
 
-            currentEditingDomain = domain.name;
-            document.getElementById('editDomainNameDisplay').value = domain.name;
-            document.getElementById('editDomainDesc').value = domain.description || '';
-            document.getElementById('editDomainEnabled').checked = domain.isEnabled;
-            document.getElementById('editDomainModal').classList.remove('hidden');
+            configureDomainModalForUpdate(domain);
+            document.getElementById('domainModal').classList.remove('hidden');
         }
 
-        function closeEditDomainModal() {
+        function closeDomainModal() {
             currentEditingDomain = null;
-            document.getElementById('editDomainModal').classList.add('hidden');
+            domainModalMode = 'create';
+            document.getElementById('domainModal').classList.add('hidden');
         }
 
-        async function handleUpdateDomain(e) {
+        async function handleSaveDomain(e) {
             e.preventDefault();
-            if (!currentEditingDomain) return;
 
-            const payload = {
-                description: document.getElementById('editDomainDesc').value.trim() || null,
-                isEnabled: document.getElementById('editDomainEnabled').checked
-            };
+            const saveBtn = document.getElementById('domainSaveBtn');
+            const prevLabel = saveBtn.textContent;
+            saveBtn.disabled = true;
+            saveBtn.classList.add('opacity-60', 'cursor-not-allowed');
 
             try {
-                const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(currentEditingDomain)}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                if (!res.ok) throw new Error('Failed to update domain');
-                closeEditDomainModal();
-                showToast(`Domain "${currentEditingDomain}" updated successfully!`);
-                loadDomains();
+                if (domainModalMode === 'create') {
+                    const domainName = document.getElementById('domainNameInput').value.trim().toLowerCase();
+                    if (!domainName) {
+                        showToast('Domain name cannot be empty.', true);
+                        return;
+                    }
+
+                    const payload = {
+                        domainName,
+                        description: document.getElementById('domainDescInput').value.trim() || null,
+                        isEnabled: document.getElementById('domainEnabledInput').checked
+                    };
+
+                    saveBtn.textContent = 'Creating...';
+                    const res = await apiFetch(DOMAINS_API, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        let msg = 'Failed to create domain';
+                        try {
+                            const err = await res.json();
+                            if (err && (err.error || err.title)) msg = err.error || err.title;
+                        } catch (_) { }
+                        throw new Error(msg);
+                    }
+
+                    const createdDto = await res.json().catch(() => null);
+                    await loadDomains();
+
+                    const createdDomain = domainsCache.find(d => d.name === domainName) || {
+                        name: (createdDto && createdDto.name) || domainName,
+                        description: createdDto ? createdDto.description : payload.description,
+                        isEnabled: createdDto ? createdDto.isEnabled : payload.isEnabled,
+                        isDkimEnabled: createdDto ? Boolean(createdDto.isDkimEnabled) : false,
+                        dkimSelector: createdDto ? createdDto.dkimSelector : null,
+                        dkimPublicKey: createdDto ? createdDto.dkimPublicKey : null
+                    };
+
+                    configureDomainModalForUpdate(createdDomain);
+                    showToast(`Domain "${createdDomain.name}" created. You can now configure DKIM.`);
+                } else {
+                    if (!currentEditingDomain) return;
+
+                    const existing = domainsCache.find(d => d.name === currentEditingDomain);
+                    const hasKey = Boolean(existing && existing.dkimPublicKey && existing.dkimPublicKey.trim().length > 0);
+                    const isDkimEnabled = hasKey && document.getElementById('domainDkimEnabledInput').checked;
+                    const rawSelector = document.getElementById('domainDkimSelectorInput').value.trim().toLowerCase();
+
+                    if (isDkimEnabled && !rawSelector) {
+                        showToast('DKIM selector cannot be empty when DKIM signing is enabled.', true);
+                        return;
+                    }
+
+                    const payload = {
+                        description: document.getElementById('domainDescInput').value.trim() || null,
+                        isEnabled: document.getElementById('domainEnabledInput').checked,
+                        isDkimEnabled,
+                        dkimSelector: (hasKey || isDkimEnabled) ? (rawSelector || null) : null
+                    };
+
+                    saveBtn.textContent = 'Saving...';
+                    const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(currentEditingDomain)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!res.ok) {
+                        let msg = 'Failed to update domain';
+                        try {
+                            const err = await res.json();
+                            if (err && (err.error || err.title)) msg = err.error || err.title;
+                        } catch (_) { }
+                        throw new Error(msg);
+                    }
+
+                    const savedDomain = currentEditingDomain;
+                    closeDomainModal();
+                    showToast(`Domain "${savedDomain}" updated successfully!`);
+                    loadDomains();
+                }
             } catch (err) {
-                showToast(err.message, true);
+                saveBtn.textContent = prevLabel;
+                showToast(err.message || 'Operation failed.', true);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+            }
+        }
+
+        async function handleGenerateDkimKey() {
+            if (!currentEditingDomain) return;
+
+            const selectorInput = document.getElementById('domainDkimSelectorInput');
+            const selector = (selectorInput.value || '').trim().toLowerCase() || 'default';
+            selectorInput.value = selector;
+
+            const btn = document.getElementById('generateDkimKeyBtn');
+            const btnText = document.getElementById('generateDkimKeyBtnText');
+            const previousLabel = btnText.textContent;
+
+            btn.disabled = true;
+            btn.classList.add('opacity-60', 'cursor-not-allowed');
+            btnText.textContent = 'Generating...';
+
+            try {
+                const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(currentEditingDomain)}/dkim/generate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selector })
+                });
+
+                if (!res.ok) {
+                    let msg = 'Failed to generate DKIM keypair.';
+                    try {
+                        const err = await res.json();
+                        if (err && (err.error || err.title)) msg = err.error || err.title;
+                    } catch (_) { }
+                    throw new Error(msg);
+                }
+
+                const data = await res.json();
+                await loadDomains();
+
+                const refreshed = domainsCache.find(d => d.name === currentEditingDomain);
+                if (refreshed) {
+                    selectorInput.value = refreshed.dkimSelector || selector;
+                    refreshEditDomainDkimUi(refreshed);
+                }
+
+                if (data && data.dnsRecordName) {
+                    document.getElementById('domainDkimRecordName').value = data.dnsRecordName;
+                }
+                if (data && data.dnsRecordValue) {
+                    document.getElementById('domainDkimRecordValue').value = data.dnsRecordValue;
+                }
+                syncDkimHostPreview();
+
+                showToast(`DKIM keypair generated for "${currentEditingDomain}" (selector: ${selector}).`);
+            } catch (err) {
+                btnText.textContent = previousLabel;
+                showToast(err.message || 'Failed to generate DKIM keypair.', true);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-60', 'cursor-not-allowed');
+            }
+        }
+
+        function copyDkimField(elementId, label) {
+            const el = document.getElementById(elementId);
+            if (!el || !el.value) return;
+            el.select();
+            el.setSelectionRange(0, el.value.length);
+            try {
+                document.execCommand('copy');
+                showToast(`${label} copied to clipboard.`);
+            } catch (_) {
+                showToast(`Could not copy ${label}.`, true);
             }
         }
 
@@ -1199,21 +1509,21 @@
 
             if (days >= 90) {
                 return `
-                            <div class="text-xs text-rose-400 font-medium">${dateStr}</div>
-                            <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">${days}d inactive</span>
-                        `;
+                    <div class="text-xs text-rose-400 font-medium">${dateStr}</div>
+                    <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">${days}d inactive</span>
+                `;
             }
             if (days >= 30) {
                 return `
-                            <div class="text-xs text-amber-400 font-medium">${dateStr}</div>
-                            <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">${days}d ago</span>
-                        `;
+                    <div class="text-xs text-amber-400 font-medium">${dateStr}</div>
+                    <span class="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">${days}d ago</span>
+                `;
             }
             const relText = days === 0 ? 'Today' : (days === 1 ? 'Yesterday' : `${days}d ago`);
             return `
-                        <div class="text-xs text-slate-300">${dateStr}</div>
-                        <div class="text-[11px] text-slate-500">${relText}</div>
-                    `;
+                <div class="text-xs text-slate-300">${dateStr}</div>
+                <div class="text-[11px] text-slate-500">${relText}</div>
+            `;
         }
 
         function filterUsersLocally() {
@@ -1275,30 +1585,30 @@
                     : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 mr-1.5 bg-rose-400 rounded-full"></span>Disabled</span>';
 
                 tr.innerHTML = `
-                            <td class="py-3.5 px-6 font-medium text-slate-100 whitespace-nowrap">
-                                <div class="flex items-center space-x-2">
-                                    <i class="fa-solid fa-user text-blue-400 text-xs"></i>
-                                    <span>${escapeHtml(u.userName)}</span>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-6">${aliasesHtml}</td>
-                            <td class="py-3.5 px-6 text-slate-300">${descText}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">
-                                <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
-                                <div class="w-28 bg-slate-900 rounded-full h-1.5 border border-slate-700/60">
-                                    <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-6 text-slate-300 text-xs font-mono whitespace-nowrap">${u.sentCountToday} / ${u.maxDailySends}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">${formatLastLoginBadge(u.lastLoginDate)}</td>
-                            <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
-                            <td class="py-3.5 px-6 text-right whitespace-nowrap">
-                                <button onclick="openEditUserModal('${escapeHtml(u.userId)}')"
-                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                    <i class="fa-solid fa-gear mr-1"></i> Manage
-                                </button>
-                            </td>
-                        `;
+                    <td class="py-3.5 px-6 font-medium text-slate-100 whitespace-nowrap">
+                        <div class="flex items-center space-x-2">
+                            <i class="fa-solid fa-user text-blue-400 text-xs"></i>
+                            <span>${escapeHtml(u.userName)}</span>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-6">${aliasesHtml}</td>
+                    <td class="py-3.5 px-6 text-slate-300">${descText}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">
+                        <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
+                        <div class="w-28 bg-slate-900 rounded-full h-1.5 border border-slate-700/60">
+                            <div class="${barColor} h-1.5 rounded-full" style="width: ${pct}%"></div>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-6 text-slate-300 text-xs font-mono whitespace-nowrap">${u.sentCountToday} / ${u.maxDailySends}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">${formatLastLoginBadge(u.lastLoginDate)}</td>
+                    <td class="py-3.5 px-6 text-center whitespace-nowrap">${statusBadge}</td>
+                    <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                        <button onclick="openEditUserModal('${escapeHtml(u.userId)}')"
+                            class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                            <i class="fa-solid fa-gear mr-1"></i> Manage
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
         }
@@ -1313,6 +1623,7 @@
             document.getElementById('newUserDesc').value = '';
             document.getElementById('newUserQuotaMB').value = '10240';
             document.getElementById('newUserMaxSends').value = '500';
+            document.getElementById('newUserEnabled').checked = true;
             document.getElementById('createUserModal').classList.remove('hidden');
         }
         function closeCreateUserModal() {
@@ -1326,6 +1637,7 @@
                 userName: document.getElementById('newUserName').value.trim(),
                 password: document.getElementById('newUserPassword').value,
                 description: document.getElementById('newUserDesc').value.trim() || null,
+                isEnabled: document.getElementById('newUserEnabled').checked,
                 storageQuotaBytes: quotaMB * BYTES_PER_MB,
                 maxDailySends: parseInt(document.getElementById('newUserMaxSends').value, 10) || 500
             };
@@ -1404,16 +1716,16 @@
                 li.className = 'px-3 py-2 flex items-center justify-between text-xs hover:bg-slate-800/60 transition-colors';
                 const escapedEmailJs = email.replace(/'/g, "\\'");
                 li.innerHTML = `
-                            <span class="font-mono text-slate-200 flex items-center space-x-2">
-                                <i class="fa-solid fa-envelope text-blue-400"></i>
-                                <span>${escapeHtml(email)}</span>
-                            </span>
-                            <button type="button" onclick="openDeleteConfirmModal('user-email', '${escapedEmailJs}')"
-                                    title="Remove email address"
-                                    class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded hover:bg-rose-500/10 transition-colors">
-                                <i class="fa-solid fa-trash-can"></i>
-                            </button>
-                        `;
+                    <span class="font-mono text-slate-200 flex items-center space-x-2">
+                        <i class="fa-solid fa-envelope text-blue-400"></i>
+                        <span>${escapeHtml(email)}</span>
+                    </span>
+                    <button type="button" onclick="openDeleteConfirmModal('user-email', '${escapedEmailJs}')"
+                            title="Remove email address"
+                            class="text-rose-400 hover:text-rose-300 px-2 py-0.5 rounded hover:bg-rose-500/10 transition-colors">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                `;
                 ul.appendChild(li);
             });
         }
@@ -1536,14 +1848,14 @@
 
             if (diffMs <= 0) {
                 return `
-                            <div class="text-xs text-emerald-400 font-medium">Due now</div>
-                            <div class="text-[11px] text-slate-500">${timeStr}</div>
-                        `;
+                    <div class="text-xs text-emerald-400 font-medium">Due now</div>
+                    <div class="text-[11px] text-slate-500">${timeStr}</div>
+                `;
             }
             return `
-                        <div class="text-xs text-slate-200 font-medium">in ${formatRelativeDuration(diffMs)}</div>
-                        <div class="text-[11px] text-slate-500">${timeStr}</div>
-                    `;
+                <div class="text-xs text-slate-200 font-medium">in ${formatRelativeDuration(diffMs)}</div>
+                <div class="text-[11px] text-slate-500">${timeStr}</div>
+            `;
         }
 
         function filterQueueLocally() {
@@ -1601,38 +1913,32 @@
                 const escapedIdJs = (item.id || '').replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                            <td class="py-3.5 px-6">
-                                <div class="flex flex-col space-y-0.5">
-                                    <div>${senderDisplay}</div>
-                                    <div class="flex items-center space-x-1.5 text-slate-100 font-mono text-xs">
-                                        <i class="fa-solid fa-arrow-right text-blue-400 text-[10px]"></i>
-                                        <span>${escapeHtml(item.recipientAddress)}</span>
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">
-                                <div class="text-xs font-semibold text-slate-200">${item.attemptCount}</div>
-                                ${delayBadge}
-                            </td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">${formatNextRetryHtml(item.nextRetryTime)}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">
-                                <div class="text-xs text-slate-200">${ageStr}</div>
-                                <div class="text-[11px] text-slate-500 font-mono">${formatBytes(item.messageSizeBytes)}</div>
-                            </td>
-                            <td class="py-3.5 px-6">${errorText}</td>
-                            <td class="py-3.5 px-6 text-right whitespace-nowrap space-x-1.5">
-                                <button onclick="openQueueDetailsModal('${escapedIdJs}')"
-                                    class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
-                                    <i class="fa-solid fa-eye mr-1"></i> Inspect
-                                </button>
-                                <!-- Uncomment when DELETE /api/relay-queue/{id} is implemented:
-                                <button onclick="openDeleteConfirmModal('queue-item', '${escapedIdJs}')" title="Delete Queued Message"
-                                    class="px-2.5 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
-                                    <i class="fa-solid fa-trash-can"></i>
-                                </button>
-                                -->
-                            </td>
-                        `;
+                    <td class="py-3.5 px-6">
+                        <div class="flex flex-col space-y-0.5">
+                            <div>${senderDisplay}</div>
+                            <div class="flex items-center space-x-1.5 text-slate-100 font-mono text-xs">
+                                <i class="fa-solid fa-arrow-right text-blue-400 text-[10px]"></i>
+                                <span>${escapeHtml(item.recipientAddress)}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">
+                        <div class="text-xs font-semibold text-slate-200">${item.attemptCount}</div>
+                        ${delayBadge}
+                    </td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">${formatNextRetryHtml(item.nextRetryTime)}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">
+                        <div class="text-xs text-slate-200">${ageStr}</div>
+                        <div class="text-[11px] text-slate-500 font-mono">${formatBytes(item.messageSizeBytes)}</div>
+                    </td>
+                    <td class="py-3.5 px-6">${errorText}</td>
+                    <td class="py-3.5 px-6 text-right whitespace-nowrap space-x-1.5">
+                        <button onclick="openQueueDetailsModal('${escapedIdJs}')"
+                            class="px-3 py-1.5 bg-slate-700/60 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors">
+                            <i class="fa-solid fa-eye mr-1"></i> Inspect
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
         }
@@ -1812,23 +2118,23 @@
                 const escapedIdJs = (s.id || '').replace(/'/g, "\\'");
 
                 tr.innerHTML = `
-                            <td class="py-3.5 px-6 whitespace-nowrap">${getProtocolBadgeHtml(s.protocol)}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">
-                                <div class="font-mono text-xs text-slate-100">${escapeHtml(s.remoteEndPoint)}</div>
-                                <div class="font-mono text-[11px] text-slate-500">${escapeHtml(s.id)}</div>
-                            </td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">${userHtml}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">${statusBadge}</td>
-                            <td class="py-3.5 px-6 whitespace-nowrap">${transportHtml}</td>
-                            <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(connectTooltip)}">${connectDuration}</td>
-                            <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(activityTooltip)}">${activityText}</td>
-                            <td class="py-3.5 px-6 text-right whitespace-nowrap">
-                                <button onclick="openDeleteConfirmModal('session', '${escapedProtoJs}|${escapedIdJs}')" title="Disconnect Session"
-                                    class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
-                                    <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Disconnect
-                                </button>
-                            </td>
-                        `;
+                    <td class="py-3.5 px-6 whitespace-nowrap">${getProtocolBadgeHtml(s.protocol)}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">
+                        <div class="font-mono text-xs text-slate-100">${escapeHtml(s.remoteEndPoint)}</div>
+                        <div class="font-mono text-[11px] text-slate-500">${escapeHtml(s.id)}</div>
+                    </td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">${userHtml}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">${statusBadge}</td>
+                    <td class="py-3.5 px-6 whitespace-nowrap">${transportHtml}</td>
+                    <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(connectTooltip)}">${connectDuration}</td>
+                    <td class="py-3.5 px-6 text-xs text-slate-300 whitespace-nowrap" title="${escapeHtml(activityTooltip)}">${activityText}</td>
+                    <td class="py-3.5 px-6 text-right whitespace-nowrap">
+                        <button onclick="openDeleteConfirmModal('session', '${escapedProtoJs}|${escapedIdJs}')" title="Disconnect Session"
+                            class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-medium transition-colors">
+                            <i class="fa-solid fa-plug-circle-xmark mr-1"></i> Disconnect
+                        </button>
+                    </td>
+                `;
                 tbody.appendChild(tr);
             });
         }
@@ -1896,7 +2202,7 @@
                     const res = await apiFetch(`${DOMAINS_API}/${encodeURIComponent(targetDomain)}`, { method: 'DELETE' });
                     if (!res.ok) throw new Error('Failed to delete domain');
                     closeDeleteConfirmModal();
-                    closeEditDomainModal();
+                    closeDomainModal();
                     showToast(`Domain "${targetDomain}" deleted.`);
                     loadDomains();
                 } catch (err) {
@@ -2135,7 +2441,6 @@
 
                     const delta = await res.json();
                     if (!Array.isArray(delta) || delta.length === 0) {
-                        // Nothing new: skip UI & DOM work completely
                         return;
                     }
 
@@ -2192,7 +2497,6 @@
             try {
                 const res = await apiFetch(`${LOGS_API}/live`, { method: 'DELETE' });
                 if (!res.ok) throw new Error('Failed to clear live log buffer');
-                // Keep lastSeenLogId monotonic so in-flight polls won't re-add cleared IDs
                 logsCache = [];
                 expandedLogKey = null;
                 renderedLogKeys = [];
@@ -2302,30 +2606,26 @@
                 : '';
 
             tr.innerHTML = `
-                        <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap align-top">${formatLogTimestamp(entry.timestamp)}</td>
-                        <td class="py-2.5 px-4 whitespace-nowrap align-top">${getLogLevelBadgeHtml(entry.level)}</td>
-                        <td class="py-2.5 px-4 text-slate-300 whitespace-nowrap align-top">${escapeHtml(entry.category || 'System')}</td>
-                        <td class="py-2.5 px-4 text-slate-100 break-words align-top">${escapeHtml(entry.message || '')}${detailTag}</td>
-                    `;
+                <td class="py-2.5 px-4 text-slate-400 whitespace-nowrap align-top">${formatLogTimestamp(entry.timestamp)}</td>
+                <td class="py-2.5 px-4 whitespace-nowrap align-top">${getLogLevelBadgeHtml(entry.level)}</td>
+                <td class="py-2.5 px-4 text-slate-300 whitespace-nowrap align-top">${escapeHtml(entry.category || 'System')}</td>
+                <td class="py-2.5 px-4 text-slate-100 break-words align-top">${escapeHtml(entry.message || '')}${detailTag}</td>
+            `;
             rows.push(tr);
 
             if (isExpanded) {
                 const detailTr = document.createElement('tr');
                 detailTr.className = 'bg-slate-950/90';
-                const idLine = (entry.id !== undefined && entry.id !== null && entry.id > 0) ? `Id        : #${entry.id}
-` : '';
+                const idLine = (entry.id !== undefined && entry.id !== null && entry.id > 0) ? `Id        : #${entry.id}\n` : '';
                 const detailBody = hasDetail
                     ? `${idLine}${entry.detail}`
-                    : `${idLine}Timestamp : ${entry.timestamp || '—'}
-Level     : ${entry.level || '—'}
-Source    : ${entry.category || '—'}
-Message   : ${entry.message || ''}`;
+                    : `${idLine}Timestamp : ${entry.timestamp || '—'}\nLevel     : ${entry.level || '—'}\nSource    : ${entry.category || '—'}\nMessage   : ${entry.message || ''}`;
 
                 detailTr.innerHTML = `
-                            <td colspan="4" class="px-4 py-3 border-t border-slate-800">
-                                <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words">${escapeHtml(detailBody)}</pre>
-                            </td>
-                        `;
+                    <td colspan="4" class="px-4 py-3 border-t border-slate-800">
+                        <pre class="text-xs font-mono text-slate-300 whitespace-pre-wrap break-words">${escapeHtml(detailBody)}</pre>
+                    </td>
+                `;
                 rows.push(detailTr);
             }
 
@@ -2349,7 +2649,6 @@ Message   : ${entry.message || ''}`;
 
             const nextKeys = entries.map((entry, idx) => getLogEntryKey(entry, idx));
 
-            // Fast incremental append path: existing prefix matches 1:1 and only new rows were added at the end
             const canAppend =
                 allowIncrementalAppend &&
                 expandedLogKey === null &&

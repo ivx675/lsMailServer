@@ -62,12 +62,16 @@
         /// <param name="domainName">The unique name of the domain to update.</param>
         /// <param name="description">The updated description or notes, or <see langword="null"/> to clear it.</param>
         /// <param name="isEnabled">Indicates whether the domain routing is active.</param>
+        /// <param name="dkimEnabled">Indicates whether DKIM signing is enabled for outbound messages on this domain.</param>
+        /// <param name="dkimSelector">Optional DKIM selector, or <see langword="null"/>/whitespace to clear it.</param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns><see langword="true"/> if at least one row was successfully updated; otherwise, <see langword="false"/>.</returns>
         Task<bool> UpdateDomainAsync(
             string domainName,
             string? description,
             bool isEnabled,
+            bool dkimEnabled,
+            string? dkimSelector,
             CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -78,6 +82,18 @@
         /// <returns><see langword="true"/> if at least one row was successfully deleted; otherwise, <see langword="false"/>.</returns>
         Task<bool> DeleteDomainAsync(
             string domainName,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Generates a new 2048-bit RSA DKIM keypair for an existing domain and persists it with the specified selector.
+        /// </summary>
+        /// <param name="domainName">The unique name of the domain (normalized via Trim and ToLowerInvariant).</param>
+        /// <param name="selector">The DKIM selector to store and associate with the generated keypair.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns><see langword="true"/> if the keypair was generated and saved for the domain; otherwise, <see langword="false"/>.</returns>
+        Task<bool> GenerateDomainDkimKeyAsync(
+            string domainName,
+            string selector,
             CancellationToken cancellationToken = default);
 
         // --- Users ---

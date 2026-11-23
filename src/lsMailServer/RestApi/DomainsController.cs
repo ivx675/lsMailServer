@@ -18,7 +18,16 @@ namespace lsMailServer.RestApi
         /// <param name="Name">The unique domain name.</param>
         /// <param name="Description">Optional description or notes for the domain.</param>
         /// <param name="IsEnabled">Indicates whether mail routing is active for this domain.</param>
-        public record DomainDto(string Name, string? Description, bool IsEnabled);
+        /// <param name="IsDkimEnabled">Indicates whether DKIM signing is enabled for outbound messages on this domain.</param>
+        /// <param name="DkimSelector">The DKIM selector associated with the domain's keypair, or <see langword="null"/> when not set.</param>
+        /// <param name="DkimPublicKey">The base64-encoded SubjectPublicKeyInfo DKIM public key, or <see langword="null"/> when no key has been generated.</param>
+        public record DomainDto(
+            string Name,
+            string? Description,
+            bool IsEnabled,
+            bool IsDkimEnabled,
+            string? DkimSelector,
+            string? DkimPublicKey);
 
         /// <summary>
         /// Represents the payload required to create a new mail domain.
@@ -29,11 +38,23 @@ namespace lsMailServer.RestApi
         public record CreateDomainRequest(string DomainName, string? Description, bool IsEnabled = true);
 
         /// <summary>
+        /// Represents the payload required to generate or rotate a DKIM keypair for an existing domain.
+        /// </summary>
+        /// <param name="Selector">The DKIM selector to associate with the generated keypair.</param>
+        public record GenerateDomainDkimKeyRequest(string Selector);
+
+        /// <summary>
         /// Represents the payload required to update an existing mail domain.
         /// </summary>
         /// <param name="Description">The updated description or notes for the domain (can be null to clear).</param>
         /// <param name="IsEnabled">Indicates whether mail routing should be active for this domain.</param>
-        public record UpdateDomainRequest(string? Description, bool IsEnabled);
+        /// <param name="IsDkimEnabled">Indicates whether DKIM signing is enabled for outbound messages on this domain.</param>
+        /// <param name="DkimSelector">Optional DKIM selector; <see langword="null"/> when DKIM is not configured.</param>
+        public record UpdateDomainRequest(
+            string? Description,
+            bool IsEnabled,
+            bool IsDkimEnabled,
+            string? DkimSelector);
 
         private readonly IDatabaseService _dbService;
 
@@ -67,7 +88,10 @@ namespace lsMailServer.RestApi
                 .Select(domain => new DomainDto(
                     Name: domain.Name,
                     Description: domain.Description,
-                    IsEnabled: domain.IsEnabled
+                    IsEnabled: domain.IsEnabled,
+                    IsDkimEnabled: domain.IsDkimEnabled,
+                    DkimSelector: domain.DkimSelector,
+                    DkimPublicKey: domain.DkimPublicKey
                 ))
                 .ToList();
 
@@ -95,7 +119,14 @@ namespace lsMailServer.RestApi
                 return NotFound(new { error = "Domain not found." });
             }
 
-            var retVal = new DomainDto(Name: domain.Name, Description: domain.Description, IsEnabled: domain.IsEnabled);
+            var retVal = new DomainDto(
+                Name: domain.Name,
+                Description: domain.Description,
+                IsEnabled: domain.IsEnabled,
+                IsDkimEnabled: domain.IsDkimEnabled,
+                DkimSelector: domain.DkimSelector,
+                DkimPublicKey: domain.DkimPublicKey
+            );
 
             return Ok(retVal);
         }
@@ -125,7 +156,7 @@ namespace lsMailServer.RestApi
                 return Conflict(new { error = "Domain already exists." });
             }
 
-            var createdDto = new DomainDto(normalizedDomainName, trimmedDescription, request.IsEnabled);
+            var createdDto = new DomainDto(normalizedDomainName, trimmedDescription, request.IsEnabled, false, null, null);
 
             return CreatedAtAction(nameof(GetDomain), new { domainName = normalizedDomainName }, createdDto);
         }
@@ -134,7 +165,7 @@ namespace lsMailServer.RestApi
         /// Updates an existing mail domain.
         /// </summary>
         /// <param name="domainName">The name of the domain to update.</param>
-        /// <param name="request">The update payload containing the new description and enabled status.</param>
+        /// <param name="request">The update payload containing the new description, enabled status, and DKIM settings.</param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>The updated domain details if successful; otherwise, a 404 Not Found response.</returns>
         [HttpPut("{domainName}")]
@@ -157,13 +188,27 @@ namespace lsMailServer.RestApi
                 normalizedDomainName,
                 trimmedDescription,
                 request.IsEnabled,
+                request.IsDkimEnabled,
+                request.DkimSelector,
                 cancellationToken);
 
             if (!updated) {
                 return NotFound(new { error = "Domain not found." });
             }
 
-            var updatedDto = new DomainDto(normalizedDomainName, trimmedDescription, request.IsEnabled);
+            var domain = await _dbService.GetDomainAsync(normalizedDomainName, cancellationToken);
+            if (domain == null) {
+                return NotFound(new { error = "Domain not found." });
+            }
+
+            var updatedDto = new DomainDto(
+                Name: domain.Name,
+                Description: domain.Description,
+                IsEnabled: domain.IsEnabled,
+                IsDkimEnabled: domain.IsDkimEnabled,
+                DkimSelector: domain.DkimSelector,
+                DkimPublicKey: domain.DkimPublicKey
+            );
 
             return Ok(updatedDto);
         }
@@ -190,6 +235,55 @@ namespace lsMailServer.RestApi
             }
 
             return NoContent();
+        }
+
+        /// <summary>
+        /// Generates a new 2048-bit RSA DKIM keypair for the specified domain and returns DNS TXT record values.
+        /// </summary>
+        /// <param name="domainName">The target domain name.</param>
+        /// <param name="request">The DKIM key generation request containing the selector.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        [HttpPost("{domainName}/dkim/generate")]
+        public async Task<IActionResult> GenerateDomainDkimKeyAsync(
+            string domainName,
+            [FromBody] GenerateDomainDkimKeyRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(domainName) || string.IsNullOrWhiteSpace(request.Selector)) {
+                return BadRequest("Domain name and DKIM selector are required.");
+            }
+
+            string normalizedDomain = domainName.Trim().ToLowerInvariant();
+            string normalizedSelector = request.Selector.Trim().ToLowerInvariant();
+
+            bool generated = await _dbService
+                .GenerateDomainDkimKeyAsync(normalizedDomain, normalizedSelector, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!generated)
+            {
+                return NotFound($"Domain '{normalizedDomain}' was not found.");
+            }
+
+            DomainInfo? domain = await _dbService
+                .GetDomainAsync(normalizedDomain, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (domain is null || string.IsNullOrWhiteSpace(domain.DkimPublicKey))
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "DKIM keypair was generated but could not be retrieved.");
+            }
+
+            string dnsRecordName = $"{normalizedSelector}._domainkey.{normalizedDomain}";
+            string dnsRecordValue = $"v=DKIM1; k=rsa; p={domain.DkimPublicKey}";
+
+            return Ok(new
+            {
+                DomainName = normalizedDomain,
+                Selector = normalizedSelector,
+                DnsRecordName = dnsRecordName,
+                DnsRecordValue = dnsRecordValue
+            });
         }
     }    
 }

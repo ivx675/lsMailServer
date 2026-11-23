@@ -52,6 +52,7 @@ namespace lsMailServer
                 new SmtpRelayService(
                     sp.GetRequiredService<ILogger<SmtpRelayService>>(),
                     sp.GetRequiredService<IConfiguration>(),
+                    sp.GetRequiredService<IDatabaseService>(),
                     mailStoreDir
                 ));
             builder.Services.AddHostedService(sp => sp.GetRequiredService<SmtpRelayService>());

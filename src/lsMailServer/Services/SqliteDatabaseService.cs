@@ -74,7 +74,11 @@ namespace lsMailServer.Services
                     DomainName TEXT PRIMARY KEY COLLATE NOCASE,
                     Description TEXT NULL,
                     Enabled INTEGER DEFAULT 1,
-                    CreateDate TEXT NOT NULL
+                    CreateDate TEXT NOT NULL,
+                    DkimEnabled INTEGER NOT NULL DEFAULT 0,
+                    DkimSelector TEXT NULL,
+                    DkimPrivateKey TEXT NULL,
+                    DkimPublicKey TEXT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS Users (
@@ -120,12 +124,16 @@ namespace lsMailServer.Services
         /// <param name="search">Optional domain name search string.</param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>A list of matching <see cref="DomainInfo"/> objects ordered by domain name.</returns>
-        public async Task<List<DomainInfo>> GetDomainsAsync(bool? isEnabled = null, string? search = null, CancellationToken cancellationToken = default)
+        public async Task<List<DomainInfo>> GetDomainsAsync(
+            bool? isEnabled = null,
+            string? search = null,
+            CancellationToken cancellationToken = default)
         {
             using var connection = CreateConnection();
             await using var cmd = connection.CreateCommand();
 
-            var sql = new StringBuilder("SELECT DomainName, Description, Enabled FROM Domains WHERE 1=1");
+            var sql = new StringBuilder(
+                "SELECT DomainName, Description, Enabled, DkimEnabled, DkimSelector, DkimPublicKey FROM Domains WHERE 1=1");
 
             if (isEnabled.HasValue) {
                 sql.Append(" AND Enabled = @isEnabled");
@@ -147,7 +155,11 @@ namespace lsMailServer.Services
                 domains.Add(new DomainInfo(
                     Name: reader.GetString(0),
                     Description: reader.IsDBNull(1) ? null : reader.GetString(1),
-                    IsEnabled: reader.GetInt32(2) == 1
+                    IsEnabled: reader.GetInt32(2) == 1,
+                    IsDkimEnabled: reader.GetInt32(3) == 1,
+                    DkimSelector: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    DkimPublicKey: reader.IsDBNull(5) ? null : reader.GetString(5),
+                    null
                 ));
             }
 
@@ -169,7 +181,10 @@ namespace lsMailServer.Services
             using var connection = CreateConnection();
             await using var cmd = connection.CreateCommand();
 
-            cmd.CommandText = "SELECT DomainName, Description, Enabled FROM Domains WHERE DomainName = @domainName;";
+            cmd.CommandText = @"
+                SELECT DomainName, Description, Enabled, DkimEnabled, DkimSelector, DkimPublicKey, DkimPrivateKey
+                FROM Domains
+                WHERE DomainName = @domainName;";
             cmd.Parameters.AddWithValue("@domainName", domainName.Trim().ToLowerInvariant());
 
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -177,7 +192,11 @@ namespace lsMailServer.Services
                 return new DomainInfo(
                     Name: reader.GetString(0),
                     Description: reader.IsDBNull(1) ? null : reader.GetString(1),
-                    IsEnabled: reader.GetInt32(2) == 1
+                    IsEnabled: reader.GetInt32(2) == 1,
+                    IsDkimEnabled: reader.GetInt32(3) == 1,
+                    DkimSelector: reader.IsDBNull(4) ? null : reader.GetString(4),
+                    DkimPublicKey: reader.IsDBNull(5) ? null : reader.GetString(5),
+                    DkimPrivateKey: reader.IsDBNull(6) ? null : reader.GetString(6)
                 );
             }
 
@@ -269,27 +288,45 @@ namespace lsMailServer.Services
         #region method UpdateDomainAsync
 
         /// <summary>
-        /// Asynchronously updates the description and active status of an existing domain identified by its name.
+        /// Asynchronously updates the description, active status, DKIM signing state, and DKIM selector
+        /// of an existing domain identified by its name.
         /// </summary>
         /// <param name="domainName">The unique name of the domain to update (normalized via Trim and ToLowerInvariant).</param>
         /// <param name="description">The updated description or notes, or <see langword="null"/> to clear it.</param>
         /// <param name="isEnabled">Indicates whether the domain routing is active (<see langword="true"/> for 1, <see langword="false"/> for 0).</param>
+        /// <param name="dkimEnabled">Indicates whether DKIM signing is enabled for outbound messages on this domain.</param>
+        /// <param name="dkimSelector">Optional DKIM selector, or <see langword="null"/>/whitespace to clear it.</param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns><see langword="true"/> if at least one row was successfully updated; otherwise, <see langword="false"/>.</returns>
-        public async Task<bool> UpdateDomainAsync(string domainName, string? description, bool isEnabled, CancellationToken cancellationToken = default)
+        public async Task<bool> UpdateDomainAsync(
+            string domainName,
+            string? description,
+            bool isEnabled,
+            bool dkimEnabled,
+            string? dkimSelector,
+            CancellationToken cancellationToken = default)
         {
+            string normalizedName = domainName.Trim().ToLowerInvariant();
+            string? normalizedSelector = string.IsNullOrWhiteSpace(dkimSelector)
+                ? null
+                : dkimSelector.Trim().ToLowerInvariant();
+
             using var connection = CreateConnection();
             await using var cmd = connection.CreateCommand();
 
             cmd.CommandText = @"
-                UPDATE Domains 
-                SET Description = @description, 
-                    Enabled = @enabled 
+                UPDATE Domains
+                SET Description = @description,
+                    Enabled = @enabled,
+                    DkimEnabled = @dkimEnabled,
+                    DkimSelector = @dkimSelector
                 WHERE DomainName = @name;
             ";
-            cmd.Parameters.AddWithValue("@name", domainName.Trim().ToLowerInvariant());
+            cmd.Parameters.AddWithValue("@name", normalizedName);
             cmd.Parameters.AddWithValue("@description", (object?)description ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@enabled", isEnabled ? 1 : 0);
+            cmd.Parameters.AddWithValue("@dkimEnabled", dkimEnabled ? 1 : 0);
+            cmd.Parameters.AddWithValue("@dkimSelector", (object?)normalizedSelector ?? DBNull.Value);
 
             int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             return affectedRows > 0;
@@ -312,6 +349,58 @@ namespace lsMailServer.Services
 
             cmd.CommandText = "DELETE FROM Domains WHERE DomainName = @name;";
             cmd.Parameters.AddWithValue("@name", domainName.Trim().ToLowerInvariant());
+
+            int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            return affectedRows > 0;
+        }
+
+        #endregion
+
+        #region method GenerateDomainDkimKeyAsync
+
+        /// <summary>
+        /// Asynchronously generates a new 2048-bit RSA DKIM keypair for an existing domain and saves
+        /// the selector, private key (PKCS#8 PEM), and public key (base64-encoded SubjectPublicKeyInfo) to SQLite.
+        /// </summary>
+        /// <param name="domainName">The unique name of the domain to update (normalized via Trim and ToLowerInvariant).</param>
+        /// <param name="selector">The DKIM selector to persist alongside the generated keypair.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+        /// <returns>
+        /// <see langword="true"/> if the domain exists and its DKIM keypair was updated; otherwise, <see langword="false"/>.
+        /// </returns>
+        public async Task<bool> GenerateDomainDkimKeyAsync(
+            string domainName,
+            string selector,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(domainName) || string.IsNullOrWhiteSpace(selector)) {
+                return false;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string normalizedName = domainName.Trim().ToLowerInvariant();
+            string normalizedSelector = selector.Trim().ToLowerInvariant();
+
+            using var rsa = RSA.Create(2048);
+            string privateKeyPem = rsa.ExportPkcs8PrivateKeyPem();
+            string publicKeyBase64 = Convert.ToBase64String(rsa.ExportSubjectPublicKeyInfo());
+
+            using var connection = CreateConnection();
+            await using var cmd = connection.CreateCommand();
+
+            cmd.CommandText = @"
+                UPDATE Domains
+                SET DkimSelector = @selector,
+                    DkimPrivateKey = @privateKey,
+                    DkimPublicKey = @publicKey
+                WHERE DomainName = @name;
+            ";
+            cmd.Parameters.AddWithValue("@name", normalizedName);
+            cmd.Parameters.AddWithValue("@selector", normalizedSelector);
+            cmd.Parameters.AddWithValue("@privateKey", privateKeyPem);
+            cmd.Parameters.AddWithValue("@publicKey", publicKeyBase64);
 
             int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
@@ -1037,13 +1126,13 @@ namespace lsMailServer.Services
 
             using var connection = CreateConnection();
 
-            // 1. Verify user existence and active status
+            // 1. Verify user existence
             await using (var userCheckCmd = connection.CreateCommand()) {
-                userCheckCmd.CommandText = "SELECT 1 FROM Users WHERE UserId = @userId AND Enabled = 1 LIMIT 1;";
+                userCheckCmd.CommandText = "SELECT 1 FROM Users WHERE UserId = @userId LIMIT 1;";
                 userCheckCmd.Parameters.AddWithValue("@userId", userId);
 
                 if (await userCheckCmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) == null) {
-                    return $"User with ID {userId} does not exist or is disabled.";
+                    return $"User with ID {userId} does not exist.";
                 }
             }
 
