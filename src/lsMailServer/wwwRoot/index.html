@@ -68,16 +68,16 @@
                         <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                             <i class="fa-solid fa-search"></i>
                         </span>
-                        <input type="text" id="domainSearch" placeholder="Search domain name..."
+                        <input type="text" id="domainSearch" oninput="filterDomainsLocally()" placeholder="Search domain name or description..."
                                class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
                     </div>
-                    <select id="domainStatusFilter" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <select id="domainStatusFilter" onchange="filterDomainsLocally()" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="">All Statuses</option>
                         <option value="true">Enabled Only</option>
                         <option value="false">Disabled Only</option>
                     </select>
                     <button onclick="loadDomains()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-2">
-                        <i class="fa-solid fa-filter"></i><span>Filter</span>
+                        <i class="fa-solid fa-rotate"></i><span>Refresh</span>
                     </button>
                 </div>
                 <!-- Action Button -->
@@ -122,7 +122,7 @@
                         <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                             <i class="fa-solid fa-search"></i>
                         </span>
-                        <input type="text" id="userSearch" oninput="filterUsersLocally()" placeholder="Search username, email, or description..."
+                        <input type="text" id="userSearch" oninput="filterUsersLocally()" placeholder="Search username, email, send-as, or description..."
                                class="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
                     </div>
                     <select id="userStatusFilter" onchange="filterUsersLocally()" class="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -154,7 +154,7 @@
                         <thead class="sticky top-0 z-10 bg-slate-900 shadow-sm">
                             <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-700">
                                 <th class="py-3 px-6">User Name</th>
-                                <th class="py-3 px-6">Email Aliases</th>
+                                <th class="py-3 px-6">Email Aliases &amp; Send-As</th>
                                 <th class="py-3 px-6">Description</th>
                                 <th class="py-3 px-6">Storage Quota</th>
                                 <th class="py-3 px-6">Daily Sends</th>
@@ -675,149 +675,185 @@
     </div>
 
     <!-- ================= CREATE USER MODAL ================= -->
-    <div id="createUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden">
-            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
-                <h3 class="font-bold text-base flex items-center space-x-2">
+    <div id="createUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-3">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden">
+            <div class="px-5 py-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <h3 class="font-bold text-sm flex items-center space-x-2 text-slate-100">
                     <i class="fa-solid fa-user-plus text-blue-500"></i><span>Create New User</span>
                 </h3>
-                <button onclick="closeCreateUserModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+                <button onclick="closeCreateUserModal()" class="text-slate-400 hover:text-slate-200 p-1"><i class="fa-solid fa-xmark text-base"></i></button>
             </div>
-            <form id="createUserForm" onsubmit="handleCreateUser(event)" class="p-6 space-y-4">
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Username / Handle</label>
-                    <input type="text" id="newUserName" required placeholder="e.g. john.doe"
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Password</label>
-                    <div class="flex space-x-2">
-                        <div class="relative flex-1">
-                            <input type="password" id="newUserPassword" required placeholder="••••••••••"
-                                   class="w-full pl-3 pr-10 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                            <button type="button" onclick="togglePasswordVisibility('newUserPassword', 'newUserPwdEye')" title="Show/Hide Password"
-                                    class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-200">
-                                <i id="newUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+            <form id="createUserForm" onsubmit="handleCreateUser(event)" class="p-5 space-y-3.5">
+                <!-- Row 1: Username & Password -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <div class="md:col-span-5">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Username / Handle</label>
+                        <input type="text" id="newUserName" required placeholder="e.g. john.doe"
+                               class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                    </div>
+                    <div class="md:col-span-7">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Password</label>
+                        <div class="flex space-x-2">
+                            <div class="relative flex-1">
+                                <input type="password" id="newUserPassword" required placeholder="••••••••••"
+                                       class="w-full h-9 pl-3 pr-9 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                                <button type="button" onclick="togglePasswordVisibility('newUserPassword', 'newUserPwdEye')" title="Show/Hide Password"
+                                        class="absolute inset-y-0 right-0 px-2.5 flex items-center text-slate-400 hover:text-slate-200">
+                                    <i id="newUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+                                </button>
+                            </div>
+                            <button type="button" onclick="fillRandomPassword('newUserPassword', 'newUserPwdEye')" title="Generate Secure Random Password"
+                                    class="h-9 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                                <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
                             </button>
                         </div>
-                        <button type="button" onclick="fillRandomPassword('newUserPassword', 'newUserPwdEye')" title="Generate Secure Random Password"
-                                class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
-                            <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
-                        </button>
                     </div>
                 </div>
-                <div>
-                    <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description (Optional)</label>
-                    <input type="text" id="newUserDesc" placeholder="Department, full name, or role..."
-                           class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Mailbox Quota (MB)</label>
+
+                <!-- Row 2: Description, Mailbox Quota, Max Daily Sends -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    <div class="md:col-span-6">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Description (Optional)</label>
+                        <input type="text" id="newUserDesc" placeholder="Department, full name, or role..."
+                               class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Quota (MB) <span class="text-[10px] font-normal normal-case text-slate-500">(10240=10GB)</span></label>
                         <input type="number" id="newUserQuotaMB" value="10240" required min="1"
-                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                        <p class="text-[11px] text-slate-500 mt-1">10240 MB = 10 GB</p>
+                               class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Max Daily Sends</label>
+                    <div class="md:col-span-3">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Max Daily Sends</label>
                         <input type="number" id="newUserMaxSends" value="500" required min="0"
-                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                               class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
                     </div>
                 </div>
-                <div class="flex items-center space-x-2 pt-1">
-                    <input type="checkbox" id="newUserEnabled" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
-                    <label for="newUserEnabled" class="text-sm font-medium text-slate-300 cursor-pointer">Account Enabled</label>
+
+                <!-- Row 3: Allowed Send-As & Account Enabled -->
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                    <div class="md:col-span-9">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Allowed Send-As (Optional)</label>
+                        <input type="text" id="newUserAllowedSendAs" placeholder="e.g. *@example.com; billing@partner.com; *"
+                               class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                        <p class="text-[11px] text-slate-500 mt-1">Semicolon-separated addresses or wildcards (<code class="text-slate-400">*@domain.com</code>, <code class="text-slate-400">*</code>). Own aliases are always allowed.</p>
+                    </div>
+                    <div class="md:col-span-3 flex items-center md:pt-7">
+                        <label for="newUserEnabled" class="inline-flex items-center space-x-2 cursor-pointer select-none">
+                            <input type="checkbox" id="newUserEnabled" checked class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                            <span class="text-xs font-medium text-slate-200">Account Enabled</span>
+                        </label>
+                    </div>
                 </div>
-                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-700">
-                    <button type="button" onclick="closeCreateUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Create User</button>
+
+                <div class="flex justify-end space-x-2 pt-3 border-t border-slate-700">
+                    <button type="button" onclick="closeCreateUserModal()" class="h-8 px-3.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors">Cancel</button>
+                    <button type="submit" class="h-8 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors shadow">Create User</button>
                 </div>
             </form>
         </div>
     </div>
 
     <!-- ================= EDIT USER MODAL ================= -->
-    <div id="editUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
-                <h3 class="font-bold text-base flex items-center space-x-2">
-                    <i class="fa-solid fa-user-gear text-blue-500"></i><span>Manage User Mailbox</span>
-                </h3>
-                <button onclick="closeEditUserModal()" class="text-slate-400 hover:text-slate-200"><i class="fa-solid fa-xmark text-lg"></i></button>
+    <div id="editUserModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-3">
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-5 py-3 border-b border-slate-700 flex justify-between items-center bg-slate-900/40">
+                <div class="flex items-center space-x-3">
+                    <h3 class="font-bold text-sm flex items-center space-x-2 text-slate-100">
+                        <i class="fa-solid fa-user-gear text-blue-500"></i><span>Manage User Mailbox</span>
+                    </h3>
+                    <span id="editUserAuditInfo" class="hidden sm:inline text-[11px] text-slate-400"></span>
+                </div>
+                <button onclick="closeEditUserModal()" class="text-slate-400 hover:text-slate-200 p-1"><i class="fa-solid fa-xmark text-base"></i></button>
             </div>
 
-            <div class="p-6 overflow-y-auto space-y-5">
-                <form id="editUserForm" onsubmit="handleUpdateUser(event)" class="space-y-4">
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Username (Read-Only)</label>
-                        <input type="text" id="editUserNameDisplay" disabled
-                               class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-400 cursor-not-allowed">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">New Password</label>
-                        <div class="flex space-x-2">
-                            <div class="relative flex-1">
-                                <input type="password" id="editUserPassword" placeholder="Leave blank to keep current"
-                                       class="w-full pl-3 pr-10 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
-                                <button type="button" onclick="togglePasswordVisibility('editUserPassword', 'editUserPwdEye')" title="Show/Hide Password"
-                                        class="absolute inset-y-0 right-0 px-3 flex items-center text-slate-400 hover:text-slate-200">
-                                    <i id="editUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+            <div class="p-5 overflow-y-auto space-y-4">
+                <form id="editUserForm" onsubmit="handleUpdateUser(event)" class="space-y-3.5">
+                    <!-- Row 1: Username (Read-Only) & New Password -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        <div class="md:col-span-5">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Username <span class="text-[10px] font-normal normal-case text-slate-500">(Read-Only)</span></label>
+                            <input type="text" id="editUserNameDisplay" disabled
+                                   class="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-400 cursor-not-allowed">
+                        </div>
+                        <div class="md:col-span-7">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">New Password</label>
+                            <div class="flex space-x-2">
+                                <div class="relative flex-1">
+                                    <input type="password" id="editUserPassword" placeholder="Leave blank to keep current"
+                                           class="w-full h-9 pl-3 pr-9 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                                    <button type="button" onclick="togglePasswordVisibility('editUserPassword', 'editUserPwdEye')" title="Show/Hide Password"
+                                            class="absolute inset-y-0 right-0 px-2.5 flex items-center text-slate-400 hover:text-slate-200">
+                                        <i id="editUserPwdEye" class="fa-solid fa-eye text-xs"></i>
+                                    </button>
+                                </div>
+                                <button type="button" onclick="fillRandomPassword('editUserPassword', 'editUserPwdEye')" title="Generate Secure Random Password"
+                                        class="h-9 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
+                                    <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
                                 </button>
                             </div>
-                            <button type="button" onclick="fillRandomPassword('editUserPassword', 'editUserPwdEye')" title="Generate Secure Random Password"
-                                    class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
-                                <i class="fa-solid fa-dice text-blue-400"></i><span>Generate</span>
-                            </button>
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Description</label>
-                        <input type="text" id="editUserDesc" placeholder="Internal notes..."
-                               class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Mailbox Quota (MB)</label>
+
+                    <!-- Row 2: Description, Quota, Max Daily Sends -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                        <div class="md:col-span-6">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Description</label>
+                            <input type="text" id="editUserDesc" placeholder="Internal notes..."
+                                   class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                        </div>
+                        <div class="md:col-span-3">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Quota (MB)</label>
                             <input type="number" id="editUserQuotaMB" required min="1"
-                                   class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                                   class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
                         </div>
-                        <div>
-                            <label class="block text-xs font-semibold uppercase text-slate-400 mb-1">Max Daily Sends</label>
+                        <div class="md:col-span-3">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Max Daily Sends</label>
                             <input type="number" id="editUserMaxSends" required min="0"
-                                   class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
+                                   class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100">
                         </div>
                     </div>
-                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="editUserEnabled" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
-                            <label for="editUserEnabled" class="text-sm font-medium text-slate-300">Account Enabled</label>
+
+                    <!-- Row 3: Allowed Send-As & Account Enabled -->
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-start">
+                        <div class="md:col-span-9">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Allowed Send-As (Optional)</label>
+                            <input type="text" id="editUserAllowedSendAs" placeholder="e.g. *@example.com; billing@partner.com; *"
+                                   class="w-full h-9 px-3 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                            <p class="text-[11px] text-slate-500 mt-1">Semicolon-separated delegated addresses or wildcards (<code class="text-slate-400">*@domain.com</code>, <code class="text-slate-400">*</code>).</p>
                         </div>
-                        <span id="editUserAuditInfo" class="text-[11px] text-slate-400"></span>
+                        <div class="md:col-span-3 flex items-center md:pt-7">
+                            <label for="editUserEnabled" class="inline-flex items-center space-x-2 cursor-pointer select-none">
+                                <input type="checkbox" id="editUserEnabled" class="w-4 h-4 rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-blue-500">
+                                <span class="text-xs font-medium text-slate-200">Account Enabled</span>
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Delete & Save actions inside modal -->
-                    <div class="flex items-center justify-between pt-4 border-t border-slate-700">
-                        <button type="button" onclick="openDeleteConfirmModal('user')" class="px-3 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5">
+                    <div class="flex items-center justify-between pt-3 border-t border-slate-700">
+                        <button type="button" onclick="openDeleteConfirmModal('user')" class="h-8 px-3 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5">
                             <i class="fa-solid fa-trash-can"></i><span>Delete User</span>
                         </button>
                         <div class="flex space-x-2">
-                            <button type="button" onclick="closeEditUserModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors">Cancel</button>
-                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors shadow">Save Changes</button>
+                            <button type="button" onclick="closeEditUserModal()" class="h-8 px-3.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors">Cancel</button>
+                            <button type="submit" class="h-8 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-medium transition-colors shadow">Save Changes</button>
                         </div>
                     </div>
                 </form>
 
                 <!-- Email Aliases Section -->
-                <div class="pt-4 border-t border-slate-700 space-y-3">
-                    <label class="block text-xs font-semibold uppercase text-slate-400">Assigned Email Addresses &amp; Aliases</label>
-                    <div class="flex space-x-2">
-                        <input type="email" id="newUserAliasInput" placeholder="user@domain.com"
-                               class="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
-                        <button type="button" onclick="handleAddUserEmail()" class="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center space-x-1.5 whitespace-nowrap">
-                            <i class="fa-solid fa-plus text-xs"></i><span>Add</span>
-                        </button>
+                <div class="pt-3.5 border-t border-slate-700 space-y-2.5">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Assigned Email Addresses &amp; Aliases</label>
+                        <div class="flex space-x-2 sm:w-80">
+                            <input type="email" id="newUserAliasInput" placeholder="user@domain.com"
+                                   class="flex-1 h-8 px-2.5 bg-slate-900 border border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-100 placeholder-slate-500">
+                            <button type="button" onclick="handleAddUserEmail()" class="h-8 px-3 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 whitespace-nowrap">
+                                <i class="fa-solid fa-plus text-[11px]"></i><span>Add</span>
+                            </button>
+                        </div>
                     </div>
-                    <ul id="userAliasesList" class="divide-y divide-slate-800 bg-slate-900/70 border border-slate-700/80 rounded-lg max-h-36 overflow-y-auto">
+                    <ul id="userAliasesList" class="divide-y divide-slate-800 bg-slate-900/70 border border-slate-700/80 rounded-lg max-h-32 overflow-y-auto">
                         <!-- Aliases populated dynamically -->
                     </ul>
                 </div>
@@ -1108,23 +1144,32 @@
         // DOMAINS & DKIM LOGIC
         // ==========================================
         async function loadDomains() {
-            const search = document.getElementById('domainSearch').value.trim();
-            const isEnabled = document.getElementById('domainStatusFilter').value;
-
-            let url = DOMAINS_API + '?';
-            const params = new URLSearchParams();
-            if (search) params.append('search', search);
-            if (isEnabled !== "") params.append('isEnabled', isEnabled);
-
             try {
-                const res = await apiFetch(url + params.toString());
+                const res = await apiFetch(DOMAINS_API);
                 if (!res.ok) throw new Error('Failed to fetch domains');
                 domainsCache = await res.json();
-                renderDomainsTable(domainsCache);
+                filterDomainsLocally();
             } catch (err) {
                 console.error(err);
                 showToast(err.message || 'Failed to load domains from server.', true);
             }
+        }
+
+        function filterDomainsLocally() {
+            const query = document.getElementById('domainSearch').value.trim().toLowerCase();
+            const statusFilter = document.getElementById('domainStatusFilter').value;
+
+            const filtered = domainsCache.filter(d => {
+                const matchesStatus = statusFilter === "" || String(d.isEnabled) === statusFilter;
+                if (!matchesStatus) return false;
+
+                if (!query) return true;
+                const inName = (d.name || '').toLowerCase().includes(query);
+                const inDesc = (d.description || '').toLowerCase().includes(query);
+                return inName || inDesc;
+            });
+
+            renderDomainsTable(filtered);
         }
 
         function formatDomainDkimBadge(domain) {
@@ -1548,11 +1593,26 @@
                 if (!query) return true;
                 const inName = u.userName.toLowerCase().includes(query);
                 const inDesc = (u.description || '').toLowerCase().includes(query);
+                const inSendAs = (u.allowedSendAs || '').toLowerCase().includes(query);
                 const inEmails = (u.emailAddresses || []).some(e => e.toLowerCase().includes(query));
-                return inName || inDesc || inEmails;
+                return inName || inDesc || inSendAs || inEmails;
             });
 
             renderUsersTable(filtered);
+        }
+
+        function formatUserSendAsBadges(allowedSendAs) {
+            if (!allowedSendAs || !allowedSendAs.trim()) return '';
+            const rules = allowedSendAs
+                .split(';')
+                .map(r => r.trim())
+                .filter(Boolean);
+            if (rules.length === 0) return '';
+
+            return `<div class="flex flex-wrap items-center gap-1 mt-1.5">
+                <span class="text-[10px] uppercase font-semibold tracking-wide text-amber-400/90 mr-0.5" title="Delegated Send-As rules"><i class="fa-solid fa-paper-plane mr-0.5"></i>Send-As:</span>
+                ${rules.map(r => `<span class="inline-block bg-amber-500/10 border border-amber-500/25 text-amber-300 text-[11px] px-2 py-0.5 rounded font-mono">${escapeHtml(r)}</span>`).join('')}
+            </div>`;
         }
 
         function renderUsersTable(users) {
@@ -1574,6 +1634,7 @@
                 const aliasesHtml = (u.emailAddresses && u.emailAddresses.length > 0)
                     ? `<div class="flex flex-wrap gap-1">${u.emailAddresses.map(e => `<span class="inline-block bg-slate-900 border border-slate-700 text-slate-300 text-[11px] px-2 py-0.5 rounded font-mono">${escapeHtml(e)}</span>`).join('')}</div>`
                     : '<span class="text-xs text-slate-500 italic">No aliases</span>';
+                const sendAsHtml = formatUserSendAsBadges(u.allowedSendAs);
 
                 const usageMB = (u.storageUsageBytes / BYTES_PER_MB).toFixed(1);
                 const quotaMB = Math.round(u.storageQuotaBytes / BYTES_PER_MB);
@@ -1591,7 +1652,7 @@
                             <span>${escapeHtml(u.userName)}</span>
                         </div>
                     </td>
-                    <td class="py-3.5 px-6">${aliasesHtml}</td>
+                    <td class="py-3.5 px-6">${aliasesHtml}${sendAsHtml}</td>
                     <td class="py-3.5 px-6 text-slate-300">${descText}</td>
                     <td class="py-3.5 px-6 whitespace-nowrap">
                         <div class="text-xs text-slate-300 mb-1">${usageMB} MB <span class="text-slate-500">/ ${quotaMB} MB (${pct}%)</span></div>
@@ -1623,6 +1684,7 @@
             document.getElementById('newUserDesc').value = '';
             document.getElementById('newUserQuotaMB').value = '10240';
             document.getElementById('newUserMaxSends').value = '500';
+            document.getElementById('newUserAllowedSendAs').value = '';
             document.getElementById('newUserEnabled').checked = true;
             document.getElementById('createUserModal').classList.remove('hidden');
         }
@@ -1633,13 +1695,15 @@
         async function handleCreateUser(e) {
             e.preventDefault();
             const quotaMB = parseInt(document.getElementById('newUserQuotaMB').value, 10) || 10240;
+            const rawSendAs = document.getElementById('newUserAllowedSendAs').value.trim();
             const payload = {
                 userName: document.getElementById('newUserName').value.trim(),
                 password: document.getElementById('newUserPassword').value,
                 description: document.getElementById('newUserDesc').value.trim() || null,
                 isEnabled: document.getElementById('newUserEnabled').checked,
                 storageQuotaBytes: quotaMB * BYTES_PER_MB,
-                maxDailySends: parseInt(document.getElementById('newUserMaxSends').value, 10) || 500
+                maxDailySends: parseInt(document.getElementById('newUserMaxSends').value, 10) || 500,
+                allowedSendAs: rawSendAs.length > 0 ? rawSendAs : null
             };
 
             try {
@@ -1686,6 +1750,7 @@
             document.getElementById('editUserDesc').value = user.description || '';
             document.getElementById('editUserQuotaMB').value = Math.round(user.storageQuotaBytes / BYTES_PER_MB);
             document.getElementById('editUserMaxSends').value = user.maxDailySends;
+            document.getElementById('editUserAllowedSendAs').value = user.allowedSendAs || '';
             document.getElementById('editUserEnabled').checked = user.isEnabled;
             document.getElementById('newUserAliasInput').value = '';
 
@@ -1736,13 +1801,15 @@
 
             const rawPwd = document.getElementById('editUserPassword').value;
             const quotaMB = parseInt(document.getElementById('editUserQuotaMB').value, 10) || 10240;
+            const rawSendAs = document.getElementById('editUserAllowedSendAs').value.trim();
 
             const payload = {
                 password: rawPwd.length > 0 ? rawPwd : null,
                 description: document.getElementById('editUserDesc').value.trim() || null,
                 isEnabled: document.getElementById('editUserEnabled').checked,
                 storageQuotaBytes: quotaMB * BYTES_PER_MB,
-                maxDailySends: parseInt(document.getElementById('editUserMaxSends').value, 10) || 500
+                maxDailySends: parseInt(document.getElementById('editUserMaxSends').value, 10) || 500,
+                allowedSendAs: rawSendAs
             };
 
             try {

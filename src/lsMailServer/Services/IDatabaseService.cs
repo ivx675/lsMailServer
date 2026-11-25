@@ -130,6 +130,10 @@
         /// <param name="enabled">Indicates whether the user account is initially enabled.</param>
         /// <param name="quotaMailboxSize">The maximum allowed mailbox size quota in bytes.</param>
         /// <param name="quotaMaxDailySends">The maximum number of outgoing emails permitted per day.</param>
+        /// <param name="allowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or domain wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c>) that this user is permitted to send as or on behalf of.
+        /// </param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
         /// The generated unique 64-bit user ID if creation succeeds;
@@ -142,6 +146,7 @@
             bool enabled,
             long quotaMailboxSize,
             int quotaMaxDailySends,
+            string? allowedSendAs,
             CancellationToken cancellationToken = default);
 
         /// <summary>
@@ -153,6 +158,10 @@
         /// <param name="enabled">The updated active status, or <see langword="null"/> to leave unchanged.</param>
         /// <param name="quotaMailboxSize">The updated mailbox size quota in bytes, or <see langword="null"/> to leave unchanged.</param>
         /// <param name="quotaMaxDailySends">The updated maximum daily email send limit, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="allowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or domain wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c>) that this user is permitted to send as or on behalf of.
+        /// </param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
         /// <see langword="true"/> if the user record was successfully updated;
@@ -165,6 +174,7 @@
             bool? enabled = null,
             long? quotaMailboxSize = null,
             int? quotaMaxDailySends = null,
+            string? allowedSendAs = null,
             CancellationToken cancellationToken = default);
 
         /// <summary>

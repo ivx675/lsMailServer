@@ -1,6 +1,8 @@
 ﻿using lsMailServer.Logging;
 using lsMailServer.Services;
+using LumiSoft.Net.DNS.Client;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Primitives;
 using System.Net;
 
 namespace lsMailServer
@@ -9,7 +11,12 @@ namespace lsMailServer
     {
         static async Task Main(string[] args)
         {
-            var builder = WebApplication.CreateBuilder(args);
+            //var builder = WebApplication.CreateBuilder(args);
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+           {
+               Args = args,
+               ContentRootPath = AppContext.BaseDirectory
+           });
 
             // 1. Establish the isolated instance Data root
             string baseDir = AppContext.BaseDirectory;
@@ -154,7 +161,23 @@ namespace lsMailServer
             // 12. Map route endpoints for controllers
             app.MapControllers();
 
+            ApplyDnsServers(app.Configuration);
+            ChangeToken.OnChange(() => app.Configuration.GetReloadToken(), () => ApplyDnsServers(app.Configuration));
+
             await app.RunAsync();
+        }
+
+        static void ApplyDnsServers(IConfiguration config)
+        {
+            var servers = (config.GetSection("General:DnsServers").Get<string[]>() ?? Array.Empty<string>())
+                .Select(s => IPAddress.TryParse(s?.Trim(), out var ip) ? ip : null)
+                .Where(ip => ip != null)
+                .Cast<IPAddress>()
+                .ToArray();
+
+            if(servers.Length > 0) {
+                DNS_Client.Static.DnsServers = servers;
+            }
         }
     }
 }

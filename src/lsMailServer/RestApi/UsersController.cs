@@ -26,6 +26,10 @@ namespace lsMailServer.RestApi
         /// <param name="StorageUsageBytes">The current storage consumption of the mailbox in bytes.</param>
         /// <param name="MaxDailySends">The maximum number of emails the user is allowed to send per day.</param>
         /// <param name="SentCountToday">The number of emails the user has already sent today.</param>
+        /// <param name="AllowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c> or <c>"*"</c>) that this user is permitted to send as.
+        /// </param>
         /// <param name="CreateDate">The UTC timestamp when the user account was created, or null if unrecorded.</param>
         /// <param name="LastLoginDate">The UTC timestamp of the user's last successful login, or null if never logged in.</param>
         /// <param name="IsEnabled">Indicates whether the user account and authentication are active.</param>
@@ -38,6 +42,7 @@ namespace lsMailServer.RestApi
             long StorageUsageBytes,
             int MaxDailySends,
             int SentCountToday,
+            string? AllowedSendAs,
             DateTime CreateDate,
             DateTime? LastLoginDate,
             bool IsEnabled
@@ -51,6 +56,10 @@ namespace lsMailServer.RestApi
         /// <param name="Description">Optional notes or description for the user account.</param>
         /// <param name="StorageQuotaBytes">The maximum allowed storage quota for the mailbox in bytes.</param>
         /// <param name="MaxDailySends">The maximum number of outgoing emails the user is permitted to send per day.</param>
+        /// <param name="AllowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c> or <c>"*"</c>) that this user is permitted to send as.
+        /// </param>
         /// <param name="IsEnabled">Indicates whether the user account is active immediately upon creation.</param>
         public record CreateUserRequest(
             string UserName, 
@@ -58,6 +67,7 @@ namespace lsMailServer.RestApi
             string? Description, 
             long StorageQuotaBytes, 
             int MaxDailySends,
+            string? AllowedSendAs,
             bool IsEnabled
         );
 
@@ -69,12 +79,17 @@ namespace lsMailServer.RestApi
         /// <param name="Description">The updated notes or description, or null to leave unchanged.</param>
         /// <param name="StorageQuotaBytes">The updated maximum allowed storage quota in bytes, or null to leave unchanged.</param>
         /// <param name="MaxDailySends">The updated maximum number of daily outgoing emails, or null to leave unchanged.</param>
+        /// <param name="AllowedSendAs">
+        /// The updated semicolon-separated list of delegated sender addresses or wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c> or <c>"*"</c>), or null to leave unchanged.
+        /// </param>
         /// <param name="IsEnabled">The updated active status, or null to leave unchanged.</param>
         public record UpdateUserRequest(
             string? Password, 
             string? Description, 
             long? StorageQuotaBytes, 
             int? MaxDailySends,
+            string? AllowedSendAs,
             bool? IsEnabled
         );
 
@@ -121,6 +136,7 @@ namespace lsMailServer.RestApi
                     StorageUsageBytes: user.QuotaCurrentUsageBytes,
                     MaxDailySends: user.QuotaMaxDailySends,
                     SentCountToday: user.QuotaSentCountToday,
+                    AllowedSendAs: user.AllowedSendAs,
                     CreateDate: user.CreateDate,
                     LastLoginDate: user.LastLoginDate,
                     IsEnabled: user.IsEnabled
@@ -156,6 +172,7 @@ namespace lsMailServer.RestApi
                 StorageUsageBytes: user.Value.QuotaCurrentUsageBytes,
                 MaxDailySends: user.Value.QuotaMaxDailySends,
                 SentCountToday: user.Value.QuotaSentCountToday,
+                AllowedSendAs: user.Value.AllowedSendAs,
                 CreateDate: user.Value.CreateDate,
                 LastLoginDate: user.Value.LastLoginDate,
                 IsEnabled: user.Value.IsEnabled
@@ -195,6 +212,7 @@ namespace lsMailServer.RestApi
                 request.IsEnabled,
                 request.StorageQuotaBytes,
                 request.MaxDailySends,
+                request.AllowedSendAs,
                 cancellationToken);
 
             if (userId == -1) {
@@ -217,6 +235,7 @@ namespace lsMailServer.RestApi
                 StorageUsageBytes: createdUser.Value.QuotaCurrentUsageBytes,
                 MaxDailySends: createdUser.Value.QuotaMaxDailySends,
                 SentCountToday: createdUser.Value.QuotaSentCountToday,
+                AllowedSendAs: createdUser.Value.AllowedSendAs,
                 CreateDate: createdUser.Value.CreateDate,
                 LastLoginDate: createdUser.Value.LastLoginDate,
                 IsEnabled: createdUser.Value.IsEnabled
@@ -254,6 +273,7 @@ namespace lsMailServer.RestApi
                 request.IsEnabled,
                 request.StorageQuotaBytes,
                 request.MaxDailySends,
+                request.AllowedSendAs,
                 cancellationToken);
 
             if (!updated) {

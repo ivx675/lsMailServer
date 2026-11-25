@@ -950,20 +950,31 @@ namespace lsMailServer.Services
         /// <param name="messageStream">A seekable stream containing the raw RFC822/MIME message.</param>
         /// <param name="flags">The initial flags to assign to the message.</param>
         /// <param name="internalDate">The internal date/time to record for the message if not specified in headers.</param>
+        /// <param name="message">
+        /// An optional pre-parsed <see cref="Mail_Message"/> instance representing <paramref name="messageStream"/>. 
+        /// If <see langword="null"/>, the message will be parsed from <paramref name="messageStream"/>.
+        /// </param>
         /// <returns>A task that represents the asynchronous operation, containing the assigned unique identifier (UID) of the stored message.</returns>
-        public async Task<long> StoreMessageAsync(string userName, string folderName, Stream messageStream, string[] flags, DateTime internalDate)
+        public async Task<long> StoreMessageAsync(
+            string userName, 
+            string folderName, 
+            Stream messageStream, 
+            string[] flags, 
+            DateTime internalDate,
+            Mail_Message? message = null)
         {
             // 1. Reset stream position (stream is guaranteed seekable) and get exact size
             messageStream.Position = 0;
             long messageSize = messageStream.Length;
 
             // 2. Parse and validate
-            Mail_Message mailMessage;
-            try {
-                mailMessage = await Mail_Message.ParseFromStreamAsync(messageStream, true, false);
-            }
-            catch (Exception ex) {
-                throw new InvalidOperationException($"Message parsing failed; store rejected: {ex.Message}", ex);
+            if(message == null){
+                try {
+                    message = await Mail_Message.ParseFromStreamAsync(messageStream, true, false);
+                }
+                catch (Exception ex) {
+                    throw new InvalidOperationException($"Message parsing failed; store rejected: {ex.Message}", ex);
+                }
             }
 
             // 3. Resolve target folder directory and enforce creation rules
@@ -983,21 +994,21 @@ namespace lsMailServer.Services
             }
 
             // 4. Extract flat search and metadata fields from the parsed LumiSoft message
-            string subject = mailMessage.Subject ?? "";
-            string sender = mailMessage.From?.ToString() ?? "";
-            string to = mailMessage.To?.ToString() ?? "";
-            string cc = mailMessage.Cc?.ToString() ?? "";
-            string bcc = mailMessage.Bcc?.ToString() ?? "";
+            string subject = message.Subject ?? "";
+            string sender = message.From?.ToString() ?? "";
+            string to = message.To?.ToString() ?? "";
+            string cc = message.Cc?.ToString() ?? "";
+            string bcc = message.Bcc?.ToString() ?? "";
             string flagsStr = flags != null ? string.Join(" ", flags) : string.Empty;
-            DateTime messageDate = mailMessage.Date != null ? mailMessage.Date.Value : internalDate;
-            string bodyText = mailMessage.BodyText ?? "";
+            DateTime messageDate = message.Date != null ? message.Date.Value : internalDate;
+            string bodyText = message.BodyText ?? "";
             if (bodyText != null && bodyText.Length > 16384) {
                 bodyText = bodyText.Substring(0, 16384);
             }
 
             // 5. Build lowercase-normalized JSON dictionary supporting multiple headers with the same name
             var headersDict = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-            foreach (MIME_h header in mailMessage.Header) {
+            foreach (MIME_h header in message.Header) {
                 string headerName = header.Name.Trim().ToLowerInvariant();
 
                 // 1. Drop completely useless transport/security bloat
@@ -1025,8 +1036,8 @@ namespace lsMailServer.Services
             string headersJson = JsonSerializer.Serialize(headersDict);
 
             // 6. Serialize IMAP Envelope and BodyStructure
-            string envelope = IMAP_t_Envelope.FromMessage(mailMessage).ToString();
-            string bodyStructure = IMAP_t_BodyStructure.FromMessage(mailMessage).ToString();
+            string envelope = IMAP_t_Envelope.FromMessage(message).ToString();
+            string bodyStructure = IMAP_t_BodyStructure.FromMessage(message).ToString();
 
             long assignedUid;
             long newVersion = DateTime.UtcNow.Ticks;

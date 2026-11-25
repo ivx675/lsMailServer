@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -32,6 +33,7 @@ namespace lsMailServer.Services
             _connectionString = $"Data Source={dbPath}";
         
             EnsureDatabaseCreated();
+            EnsureDatabaseSchema();
         }
 
         #region method CreateConnection
@@ -92,6 +94,7 @@ namespace lsMailServer.Services
                     QuotaMaxDailySends INTEGER NOT NULL,
                     QuotaSentCountToday INTEGER NOT NULL DEFAULT 0,
                     QuotaLastSendDate TEXT NOT NULL,
+                    AllowedSendAs TEXT NULL,
                     CreateDate TEXT NOT NULL,
                     LastLoginDate TEXT NULL,
                     Enabled INTEGER NOT NULL DEFAULT 1
@@ -113,6 +116,74 @@ namespace lsMailServer.Services
         }
 
         #endregion
+
+        #region method EnsureDatabaseSchema
+
+        /// <summary>
+        /// Applies incremental, idempotent schema updates (such as adding new columns or indexes)
+        /// to an existing SQLite database so older installations automatically upgrade on startup.
+        /// </summary>
+        private void EnsureDatabaseSchema()
+        {
+            using var connection = CreateConnection();
+
+            // v1.1 - Send-As / Send-on-Behalf delegation
+            EnsureColumnExists(connection, "Users", "AllowedSendAs", "TEXT NULL");
+        }
+
+        #endregion
+
+        #region method EnsureColumnExists
+
+        /// <summary>
+        /// Synchronously checks whether <paramref name="columnName"/> exists on SQLite table <paramref name="tableName"/>
+        /// and executes <c>ALTER TABLE ... ADD COLUMN ...</c> if it is missing.
+        /// </summary>
+        /// <param name="connection">An open (or openable) SQLite <see cref="DbConnection"/>.</param>
+        /// <param name="tableName">The target SQLite table name (e.g., <c>"Users"</c>).</param>
+        /// <param name="columnName">The target column name (e.g., <c>"AllowedSendAs"</c>).</param>
+        /// <param name="columnDefinition">The SQLite column type and constraints (e.g., <c>"TEXT NULL"</c>).</param>
+        /// <returns><see langword="true"/> if the column was added; <see langword="false"/> if it already existed.</returns>
+        public static bool EnsureColumnExists(
+            DbConnection connection,
+            string tableName,
+            string columnName,
+            string columnDefinition)
+        {
+            ArgumentNullException.ThrowIfNull(connection);
+            ArgumentException.ThrowIfNullOrWhiteSpace(tableName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(columnDefinition);
+
+            if (connection.State != ConnectionState.Open) {
+                connection.Open();
+            }
+
+            string cleanTable = tableName.Replace("\"", string.Empty).Trim();
+            string cleanColumn = columnName.Replace("\"", string.Empty).Trim();
+
+            using (DbCommand checkCmd = connection.CreateCommand()) {
+                checkCmd.CommandText = $"SELECT 1 FROM pragma_table_info('{cleanTable.Replace("'", "''")}') WHERE lower(name) = lower(@col) LIMIT 1;";
+                DbParameter colParam = checkCmd.CreateParameter();
+                colParam.ParameterName = "@col";
+                colParam.Value = cleanColumn;
+                checkCmd.Parameters.Add(colParam);
+
+                object? exists = checkCmd.ExecuteScalar();
+                if (exists != null && exists != DBNull.Value) {
+                    return false;
+                }
+            }
+
+            using DbCommand alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = $"ALTER TABLE \"{cleanTable}\" ADD COLUMN \"{cleanColumn}\" {columnDefinition};";
+            alterCmd.ExecuteNonQuery();
+
+            return true;
+        }
+
+        #endregion
+
 
                 
         #region method GetDomainsAsync
@@ -435,6 +506,7 @@ namespace lsMailServer.Services
                     u.QuotaCurrentUsageBytes,
                     u.QuotaMaxDailySends,
                     CASE WHEN u.QuotaLastSendDate = @today THEN u.QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
+                    u.AllowedSendAs,
                     u.CreateDate,
                     u.LastLoginDate,
                     u.Enabled,
@@ -469,6 +541,7 @@ namespace lsMailServer.Services
             int ordQuotaCurrentUsageBytes = reader.GetOrdinal("QuotaCurrentUsageBytes");
             int ordQuotaMaxDailySends = reader.GetOrdinal("QuotaMaxDailySends");
             int ordQuotaSentCountToday = reader.GetOrdinal("QuotaSentCountToday");
+            int ordAllowedSendAs = reader.GetOrdinal("AllowedSendAs");
             int ordCreateDate = reader.GetOrdinal("CreateDate");
             int ordLastLoginDate = reader.GetOrdinal("LastLoginDate");
             int ordEnabled = reader.GetOrdinal("Enabled");
@@ -488,6 +561,7 @@ namespace lsMailServer.Services
                     QuotaCurrentUsageBytes: reader.GetInt64(ordQuotaCurrentUsageBytes),
                     QuotaMaxDailySends: reader.GetInt32(ordQuotaMaxDailySends),
                     QuotaSentCountToday: reader.GetInt32(ordQuotaSentCountToday),
+                    AllowedSendAs: reader.IsDBNull(ordAllowedSendAs) ? null : reader.GetString(ordAllowedSendAs),
                     CreateDate: DateTime.Parse(reader.GetString(ordCreateDate), CultureInfo.InvariantCulture),
                     LastLoginDate: reader.IsDBNull(ordLastLoginDate) ? (DateTime?)null : DateTime.Parse(reader.GetString(ordLastLoginDate), CultureInfo.InvariantCulture),
                     IsEnabled: reader.GetInt32(ordEnabled) == 1
@@ -531,6 +605,7 @@ namespace lsMailServer.Services
                     QuotaCurrentUsageBytes,
                     QuotaMaxDailySends,
                     CASE WHEN QuotaLastSendDate = @today THEN QuotaSentCountToday ELSE 0 END AS QuotaSentCountToday,
+                    AllowedSendAs,
                     CreateDate,
                     LastLoginDate
                 FROM Users
@@ -548,6 +623,7 @@ namespace lsMailServer.Services
             long currentUsageBytes;
             int maxDailySends;
             int sentCountToday;
+            string? allowedSendAs;
             DateTime createDate;
             DateTime? lastLoginDate;
 
@@ -564,6 +640,7 @@ namespace lsMailServer.Services
                 currentUsageBytes = reader.GetInt64(reader.GetOrdinal("QuotaCurrentUsageBytes"));
                 maxDailySends = reader.GetInt32(reader.GetOrdinal("QuotaMaxDailySends"));
                 sentCountToday = reader.GetInt32(reader.GetOrdinal("QuotaSentCountToday"));
+                allowedSendAs = reader.IsDBNull(reader.GetOrdinal("AllowedSendAs")) ? null : reader.GetString(reader.GetOrdinal("AllowedSendAs"));
                 createDate = DateTime.Parse(reader.GetString(reader.GetOrdinal("CreateDate")), CultureInfo.InvariantCulture);
                 lastLoginDate = reader.IsDBNull(reader.GetOrdinal("LastLoginDate")) ? (DateTime?)null : DateTime.Parse(reader.GetString(reader.GetOrdinal("LastLoginDate")), CultureInfo.InvariantCulture);
             }
@@ -593,6 +670,7 @@ namespace lsMailServer.Services
                 QuotaCurrentUsageBytes: currentUsageBytes,
                 QuotaMaxDailySends: maxDailySends,
                 QuotaSentCountToday: sentCountToday,
+                AllowedSendAs: allowedSendAs,
                 CreateDate: createDate,
                 LastLoginDate: lastLoginDate,
                 IsEnabled: enabled
@@ -612,6 +690,10 @@ namespace lsMailServer.Services
         /// <param name="enabled">Indicates whether the user account is initially enabled.</param>
         /// <param name="quotaMailboxSize">The maximum allowed mailbox size quota in bytes.</param>
         /// <param name="quotaMaxDailySends">The maximum number of outgoing emails permitted per day.</param>
+        /// <param name="allowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or domain wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c>) that this user is permitted to send as or on behalf of.
+        /// </param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
         /// The generated unique 64-bit user ID if creation succeeds;
@@ -624,6 +706,7 @@ namespace lsMailServer.Services
             bool enabled,
             long quotaMailboxSize,
             int quotaMaxDailySends,
+            string? allowedSendAs,
             CancellationToken cancellationToken = default)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(userName);
@@ -644,13 +727,12 @@ namespace lsMailServer.Services
                         UserId, UserName, PasswordHash, PasswordSalt, Enabled,
                         Description, QuotaMailboxSize, QuotaCurrentUsageBytes,
                         QuotaMaxDailySends, QuotaSentCountToday,
-                        QuotaLastSendDate, CreateDate
+                        QuotaLastSendDate, AllowedSendAs, CreateDate
                     )
                     VALUES (
                         @userId, @userName, @passwordHash, @passwordSalt, @enabled,
-                        @description, @quotaSize, 0,
-                        @maxDailySends, 0,
-                        @quotaDate, @createDate
+                        @description, @quotaSize, 0, @maxDailySends, 0,
+                        @quotaDate, @allowedSendAs, @createDate
                     );
                 ";
 
@@ -663,6 +745,7 @@ namespace lsMailServer.Services
                 cmd.Parameters.AddWithValue("@quotaSize", quotaMailboxSize);
                 cmd.Parameters.AddWithValue("@maxDailySends", quotaMaxDailySends);
                 cmd.Parameters.AddWithValue("@quotaDate", today);
+                cmd.Parameters.AddWithValue("@allowedSendAs", (object?)allowedSendAs ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@createDate", createDate);
 
                 await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -688,6 +771,10 @@ namespace lsMailServer.Services
         /// <param name="enabled">The updated active status, or <see langword="null"/> to leave unchanged.</param>
         /// <param name="quotaMailboxSize">The updated mailbox size quota in bytes, or <see langword="null"/> to leave unchanged.</param>
         /// <param name="quotaMaxDailySends">The updated maximum daily email send limit, or <see langword="null"/> to leave unchanged.</param>
+        /// <param name="allowedSendAs">
+        /// Optional semicolon-separated list of delegated sender addresses or domain wildcards
+        /// (e.g., <c>"*@example.com; billing@partner.com"</c>) that this user is permitted to send as or on behalf of.
+        /// </param>
         /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
         /// <returns>
         /// <see langword="true"/> if the user record was successfully updated (at least one row affected);
@@ -700,6 +787,7 @@ namespace lsMailServer.Services
             bool? enabled = null,
             long? quotaMailboxSize = null,
             int? quotaMaxDailySends = null,
+            string? allowedSendAs = null,
             CancellationToken cancellationToken = default)
         {
             string? passwordHash = null;
@@ -717,10 +805,11 @@ namespace lsMailServer.Services
                 SET
                     PasswordHash = COALESCE(@passwordHash, PasswordHash),
                     PasswordSalt = COALESCE(@passwordSalt, PasswordSalt),
-                    Description = COALESCE(@description, Description),
+                    Description = @description,
                     Enabled = COALESCE(@enabled, Enabled),
                     QuotaMailboxSize = COALESCE(@quotaMailboxSize, QuotaMailboxSize),
-                    QuotaMaxDailySends = COALESCE(@quotaMaxDailySends, QuotaMaxDailySends)
+                    QuotaMaxDailySends = COALESCE(@quotaMaxDailySends, QuotaMaxDailySends),
+                    AllowedSendAs = @allowedSendAs
                 WHERE UserId = @userId;
             ";
 
@@ -731,6 +820,7 @@ namespace lsMailServer.Services
             cmd.Parameters.AddWithValue("@enabled", enabled.HasValue ? (enabled.Value ? 1 : 0) : DBNull.Value);
             cmd.Parameters.AddWithValue("@quotaMailboxSize", (object?)quotaMailboxSize ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@quotaMaxDailySends", (object?)quotaMaxDailySends ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@allowedSendAs", (object?)allowedSendAs ?? DBNull.Value);
 
             int affectedRows = await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
 
@@ -820,6 +910,7 @@ namespace lsMailServer.Services
                     u.QuotaCurrentUsageBytes,
                     u.QuotaMaxDailySends,
                     u.QuotaSentCountToday,
+                    u.AllowedSendAs,
                     u.CreateDate,
                     u.LastLoginDate,
                     u.enabled,
@@ -847,6 +938,7 @@ namespace lsMailServer.Services
                 int ordQuotaCurrentUsageBytes = reader.GetOrdinal("QuotaCurrentUsageBytes");
                 int ordQuotaMaxDailySends = reader.GetOrdinal("QuotaMaxDailySends");
                 int ordQuotaSentCountToday = reader.GetOrdinal("QuotaSentCountToday");
+                int ordAllowedSendAs = reader.GetOrdinal("AllowedSendAs");
                 int ordCreateDate = reader.GetOrdinal("CreateDate");
                 int ordLastLoginDate = reader.GetOrdinal("LastLoginDate");
                 int ordEnabled = reader.GetOrdinal("Enabled");
@@ -859,6 +951,7 @@ namespace lsMailServer.Services
                 long currentUsageBytes = reader.GetInt64(ordQuotaCurrentUsageBytes);
                 int maxDailySends = reader.GetInt32(ordQuotaMaxDailySends);
                 int sentCountToday = reader.GetInt32(ordQuotaSentCountToday);
+                string? allowedSendAs = reader.IsDBNull(ordAllowedSendAs) ? null : reader.GetString(ordAllowedSendAs);
                 DateTime createDate = DateTime.Parse(reader.GetString(ordCreateDate));
                 DateTime? lastLoginDate = reader.IsDBNull(ordLastLoginDate) ? (DateTime?)null : DateTime.Parse(reader.GetString(ordLastLoginDate));
                 bool enabled = reader.GetInt32(ordEnabled) == 1;
@@ -875,6 +968,7 @@ namespace lsMailServer.Services
                     QuotaCurrentUsageBytes: currentUsageBytes,
                     QuotaMaxDailySends: maxDailySends,
                     QuotaSentCountToday: sentCountToday,
+                    AllowedSendAs: allowedSendAs,
                     CreateDate: createDate,
                     LastLoginDate: lastLoginDate,
                     IsEnabled: enabled

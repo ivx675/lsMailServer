@@ -1,4 +1,5 @@
-﻿using LumiSoft.Net.AUTH;
+﻿using lsMailServer.RestApi;
+using LumiSoft.Net.AUTH;
 using LumiSoft.Net.IMAP;
 using LumiSoft.Net.IMAP.Server;
 using LumiSoft.Net.Log;
@@ -8,11 +9,12 @@ using LumiSoft.Net.POP3.Server;
 using LumiSoft.Net.SMTP;
 using LumiSoft.Net.SMTP.Server;
 using LumiSoft.Net.TCP;
-using lsMailServer.RestApi;
 using System.Net;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using static LumiSoft.Net.MIME.MIME_MediaTypes;
 
 namespace lsMailServer.Services 
 {
@@ -31,6 +33,9 @@ namespace lsMailServer.Services
         private POP3_Server? _pop3Server;
         private IMAP_Server? _imapServer;
         private SmtpRelayService _relayServer;
+
+        private bool _validateSender;
+        private bool _validateDkimSignature;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MailServerHostedService"/> class with required 
@@ -53,12 +58,16 @@ namespace lsMailServer.Services
             _dbService = dbService;
             _mailStoreService = mailStoreService;
             _relayServer = relayService;
+
+            IConfigurationSection smtp = _configuration.GetSection("SmtpServer");
+            _validateSender = smtp.GetValue("EnableSenderValidation", true);
+            _validateDkimSignature = smtp.GetValue("EnableDkimValidation", true);
         }
 
 
         #region Event Handlers
 
-        #region SmtpServer_SessionCreatedAsync
+        #region method SmtpServer_SessionCreatedAsync
 
         private async Task SmtpServer_SessionCreatedAsync(TCP_Server_e_SessionCreated<SMTP_Session> e)
         {
@@ -102,41 +111,41 @@ namespace lsMailServer.Services
                 // MAIL FROM: command received.
                 e.Session.MailFromAsync += async (eArgs) => {
                     IPAddress remoteIP = eArgs.Session.RemoteEndPoint.Address;
+                    
+                    // Local domain, check if aaddress exists.
+                    if (await _dbService.DomainExistsAsync(eArgs.MailFrom.Domain)) {
+                        if(!await _dbService.EmailAddressExistsAsync(eArgs.MailFrom.Mailbox)) {
+                            eArgs.Response = new (550, new (5, 1, 1), $"Sender address '{eArgs.MailFrom.Mailbox}' does not exist.");
 
-                    // Check user daily send qouta limit.
+                            return;
+                        }
+                    }
+                    
                     if (eArgs.Session.AuthenticatedUserIdentity != null) {
                         var user = await _dbService.GetUserAsync(eArgs.Session.AuthenticatedUserIdentity.Name);
                         if (user != null) {
+                            // Check if the authenticated user is allowed to send as the envelope MAIL FROM address.
+                            var result = SendAsPolicy.Evaluate(eArgs.MailFrom.Mailbox, user.Value.EmailAddresses, user.Value.AllowedSendAs, null);
+                            if (!result.IsAllowed) {
+                                eArgs.Response = result.DenialResponse!;
+
+                                return;
+                            }
+
+                            // Check user daily send qouta limit.
                             if (user.Value.QuotaSentCountToday >= user.Value.QuotaMaxDailySends) {
                                 eArgs.Response = new (552,new SMTP_t_EnhancedStatusCode(5,5,2),"Daily sending quota exceeded. Please try again tomorrow.");
-
+                                
                                 return;
                             }
                         }
                     }
-                    /*
+                    
                     // Check non-authetnticated users for PTR(HELO name match) -> SPF -> MX -> domain.
-                    if(!eArgsMailFrom.Session.IsAuthenticated && !IsLanOrLocalIp(remoteIP)){
-                        try{
-                            // Run validation
-                            await SMTP_SenderValidator.ValidateAsync(remoteIP,eArgsMailFrom.Session.EhloHost!,eArgsMailFrom.MailFrom.Mailbox);
-            
-                            // If no exception is thrown, validation succeeded (SMTP 250 OK)
-                            eArgsMailFrom.Response = new (250,new SMTP_t_EnhancedStatusCode(2,1,0),"Sender validation PASSED successfully.");
-                        }
-                        catch (SMTP_ValidatorException ex){
-                            // Map to professional SMTP response codes based on IsTemporary flag
-                            if(ex.IsTemporary){
-                                eArgsMailFrom.Response = new (451,new SMTP_t_EnhancedStatusCode(4,3,0),$"Temporary Error (Try Again Later): {ex.ErrorText}");
-                            }
-                            else{
-                                eArgsMailFrom.Response = new (550,new SMTP_t_EnhancedStatusCode(5,7,1),$"Permanent Rejection (Policy Violation): {ex.ErrorText}");
-                            }
-                        }
-                        catch (Exception ex){
-                            eArgsMailFrom.Response = new (554,new SMTP_t_EnhancedStatusCode(5,3,0),$"Unexpected error: {ex.Message}");
-                        }
-                    }*/
+                    if(_validateSender && !eArgs.Session.IsAuthenticated && !IsLanOrLocalIp(remoteIP)){
+                        var result = await SMTP_SenderValidator.ValidateAsync(remoteIP,eArgs.Session.EhloHost!,eArgs.MailFrom.Mailbox);
+                        eArgs.Response = result.Response;
+                    }
                 };
 
                 #endregion
@@ -206,13 +215,49 @@ namespace lsMailServer.Services
 
                 // Raised when message successfully stored by server.
                 e.Session.MessageStoringCompleteAsync += async (eArgs) => {
+                    Mail_Message message;
                     try {
-                        var from = eArgs.Session.From!;
+                        eArgs.Stream.Position = 0;
+                        message = Mail_Message.ParseFromStream(eArgs.Stream,true,false);
+                        eArgs.Stream.Position = 0;
+
+                        // Per RFC 5322 §3.6 (Internet Message Format), only From and Date fields are strictly required
+                        if(message.From == null) {
+                            eArgs.Response = new (550, new (5, 6, 0), "Message rejected: missing required 'From' header");
+                            return;
+                        }
+                        if(message.Date == null) {
+                            eArgs.Response = new (550, new (5, 6, 0), "Message rejected: missing required 'Date' header");
+                            return;
+                        }
+                    }
+                    catch {
+                        eArgs.Response = new (550, new (5, 6, 0), "Malformed message format or invalid headers.");
+                        return;
+                    }
+
+                    try {
+                        var from = eArgs.Session.From!;                        
+
+                        if(_validateDkimSignature && message.Header.Contains("DKIM-Signature")) {
+                            var result = await DkimService.VerifySignatureAsync(eArgs.Stream);
+                            if(!result.IsValid) {
+                                eArgs.Response = new (550, new (5, 7, 20), "DKIM signature verification failed.");
+                                return;
+                            }
+                        }
+
                         foreach(var recipient in eArgs.Session.To) {
                             UserInfo? user = await _dbService.ResolveUserAsync(recipient.Mailbox);
                             // Local user
                             if (user != null) {
-                                await _mailStoreService.StoreMessageAsync(user.Value.UserName, "Inbox", eArgs.Stream, [], DateTime.Now);
+                                await _mailStoreService.StoreMessageAsync(
+                                    user.Value.UserName, 
+                                    "Inbox", 
+                                    eArgs.Stream, 
+                                    [], 
+                                    DateTime.Now,
+                                    message);
                             }
                             // External recipient (relay)
                             else {
@@ -1702,6 +1747,61 @@ namespace lsMailServer.Services
                 X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
 
             return cert;
+        }
+
+        #endregion        
+
+        #region static method IsLanOrLocalIp
+
+        /// <summary>
+        /// Determines whether the specified IP address belongs to a local loopback 
+        /// or a private local area network (LAN) range (such as RFC 1918 private blocks or link-local addresses).
+        /// </summary>
+        /// <param name="ip">The <see cref="IPAddress"/> to evaluate.</param>
+        /// <returns>
+        /// <c>true</c> if the IP address is a loopback, private IPv4, or local IPv6 address; otherwise, <c>false</c>.
+        /// </returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="ip"/> is <c>null</c> (optional handling).</exception>
+        private static bool IsLanOrLocalIp(IPAddress ip)
+        {
+            if (ip == null) return false;
+
+            // Handle IPv4 mapped to IPv6 (e.g., ::ffff:127.0.0.1)
+            if(ip.IsIPv4MappedToIPv6){
+                ip = ip.MapToIPv4();
+            }
+
+            // Loopback (127.0.0.1 / ::1)
+            if(IPAddress.IsLoopback(ip)){
+                return true;
+            }
+
+            byte[] bytes = ip.GetAddressBytes();
+
+            // IPv4 Private Ranges (RFC 1918 & Link-Local)
+            if(ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork){
+                // 10.0.0.0/8
+                if (bytes[0] == 10) return true;
+        
+                // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+                if (bytes[0] == 172 && (bytes[1] >= 16 && bytes[1] <= 31)) return true;
+        
+                // 192.168.0.0/16
+                if (bytes[0] == 192 && bytes[1] == 168) return true;
+        
+                // 169.254.0.0/16 (Link-Local / APIPA)
+                if (bytes[0] == 169 && bytes[1] == 254) return true;
+            }
+            // IPv6 Private / Local Ranges
+            else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6){
+                // Unique Local Addresses (fc00::/7)
+                if ((bytes[0] & 0xfe) == 0xfc) return true;
+        
+                // Link-Local Addresses (fe80::/10)
+                if ((bytes[0] == 0xfe) && ((bytes[1] & 0xc0) == 0x80)) return true;
+            }
+
+            return false;
         }
 
         #endregion

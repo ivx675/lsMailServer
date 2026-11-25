@@ -28998,9 +28998,11 @@
         </member>
         <member name="M:LumiSoft.Net.Mail.DkimService.VerifySignatureAsync(System.IO.Stream,System.Boolean,System.Threading.CancellationToken)">
             <summary>
-            Verifies the topmost <c>DKIM-Signature</c> header in
+            Verifies the <c>DKIM-Signature</c> headers in
             <paramref name="signedMessageStream"/> against the public key
             retrieved from DNS and returns the verification result.
+            Per RFC 6376 §6.1, if multiple <c>DKIM-Signature</c> headers are present, verification succeeds
+            as soon as at least one signature passes cryptographic validation.
             </summary>
             <param name="signedMessageStream">
             The raw RFC 5322 signed email message stream. Must be readable and positioned at the start of the headers.
@@ -29008,11 +29010,12 @@
             </param>
             <param name="allowSha1">
             When <see langword="true"/>, allows verifying legacy <c>a=rsa-sha1</c> signatures. Defaults to <see langword="false"/>
-            per RFC 8301, throwing <see cref="T:System.NotSupportedException"/> for <c>rsa-sha1</c>.
+            per RFC 8301.
             </param>
             <param name="cancellationToken">
             A token to monitor for cancellation requests.
-            </param><returns>
+            </param>
+            <returns>
             A task whose result contains the outcome of the DKIM verification operation.
             </returns>
             <exception cref="T:System.ArgumentNullException">
@@ -29020,11 +29023,6 @@
             </exception>
             <exception cref="T:System.ArgumentException">
             Thrown if <paramref name="signedMessageStream"/> is not readable.
-            </exception>
-            <exception cref="T:System.NotSupportedException">
-            Thrown when the signature uses an unsupported algorithm, such as
-            <c>ed25519-sha256</c>, a disabled <c>rsa-sha1</c> signature, or an unknown
-            <c>a=</c> algorithm value.
             </exception>
         </member>
         <member name="M:LumiSoft.Net.Mail.DkimService.ReadHeadersAsync(LumiSoft.Net.IO.SmartStream,System.Threading.CancellationToken)">
@@ -56444,112 +56442,119 @@
             Thrown when a <c>null</c> value is assigned.
             </exception>
         </member>
-        <member name="T:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException">
-            <summary>
-            Represents an exception encountered during SMTP sender validation.
-            </summary>
-        </member>
-        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException.IsTemporary">
-            <summary>
-            Gets a value indicating whether the failure is temporary (<c>true</c>, mapping to 4xx) 
-            or permanent (<c>false</c>, mapping to 5xx).
-            </summary>
-        </member>
-        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException.ErrorText">
-            <summary>
-            Gets the descriptive error text for the validation failure.
-            </summary>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException.#ctor(System.Boolean,System.String)">
-            <summary>
-            Initializes a new instance of the <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException"/> class with the specified error state and message.
-            </summary>
-            <param name="isTemporary">Indicates whether the error is a transient/temporary issue (4xx).</param>
-            <param name="errorText">The description of the validation failure.</param>
-        </member>
         <member name="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator">
             <summary>
-            Provides strict SMTP sender validation via reverse DNS (PTR), SPF record evaluation, 
-            and MX/Domain IP fallback authorization.
+            Provides inbound SMTP sender validation via reverse DNS (PTR), SPF record evaluation,
+            and MX/Domain IP fallback authorization without exception-driven control flow.
+            </summary>
+        </member>
+        <member name="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result">
+            <summary>
+            Represents the outcome of an inbound SMTP sender validation check,
+            returning an <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> without throwing exceptions for policy failures.
+            </summary>
+            <param name="IsValid"><see langword="true"/> if the sender passed validation; otherwise <see langword="false"/>.</param>
+            <param name="MatchedRule">A diagnostic identifier for the rule or check that passed, or <see langword="null"/> if rejected.</param>
+            <param name="Response">The <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> to send to the SMTP client.</param>
+        </member>
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.#ctor(System.Boolean,System.String,LumiSoft.Net.SMTP.SMTP_ServerResponse)">
+            <summary>
+            Represents the outcome of an inbound SMTP sender validation check,
+            returning an <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> without throwing exceptions for policy failures.
+            </summary>
+            <param name="IsValid"><see langword="true"/> if the sender passed validation; otherwise <see langword="false"/>.</param>
+            <param name="MatchedRule">A diagnostic identifier for the rule or check that passed, or <see langword="null"/> if rejected.</param>
+            <param name="Response">The <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> to send to the SMTP client.</param>
+        </member>
+        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.IsValid">
+            <summary><see langword="true"/> if the sender passed validation; otherwise <see langword="false"/>.</summary>
+        </member>
+        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.MatchedRule">
+            <summary>A diagnostic identifier for the rule or check that passed, or <see langword="null"/> if rejected.</summary>
+        </member>
+        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.Response">
+            <summary>The <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/> to send to the SMTP client.</summary>
+        </member>
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.Pass(System.String)">
+            <summary>
+            Creates a passing <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> with SMTP <c>250 2.1.0</c>.
+            </summary>
+            <param name="matchedRule">The validation check or mechanism that succeeded.</param>
+            <returns>A passing <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/>.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.TemporaryError(System.String,System.Int32,System.Int32)">
+            <summary>
+            Creates a temporary rejection <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> with SMTP <c>451</c> and RFC 3463 enhanced status code.
+            </summary>
+            <param name="errorText">The diagnostic reason for the temporary failure.</param>
+            <param name="subject">The RFC 3463 subject code (defaults to <c>4</c> for network/routing).</param>
+            <param name="detail">The RFC 3463 detail code (defaults to <c>43</c> for <c>4.4.3</c>).</param>
+            <returns>A temporary failure <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/>.</returns>
+        </member>
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result.PermanentReject(System.String,System.Int32,System.Int32)">
+            <summary>
+            Creates a permanent rejection <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> with SMTP <c>550</c> and RFC 3463 enhanced status code.
+            </summary>
+            <param name="errorText">The diagnostic reason for the permanent rejection.</param>
+            <param name="subject">The RFC 3463 subject code (defaults to <c>7</c> for security/policy).</param>
+            <param name="detail">The RFC 3463 detail code (defaults to <c>1</c> for <c>5.7.1</c>).</param>
+            <returns>A permanent failure <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/>.</returns>
+        </member>
+        <member name="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.StepStatus">
+            <summary>
+            Internal classification of an individual validation step's result.
+            </summary>
+        </member>
+        <member name="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.StepOutcome">
+            <summary>
+            Internal result wrapper produced by individual PTR, SPF, and MX/Domain fallback checks.
+            </summary>
+        </member>
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.StepOutcome.#ctor(LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.StepStatus,System.String,LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result)">
+            <summary>
+            Internal result wrapper produced by individual PTR, SPF, and MX/Domain fallback checks.
             </summary>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.ValidateAsync(System.Net.IPAddress,System.String,System.String)">
             <summary>
-            Validates the remote sender using a strict PTR and SPF check. 
-            For normal mail, validation targets the sender's domain; for null senders (&lt;&gt;), 
-            it falls back to evaluating against the client's EHLO hostname.
-            Throws an <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException"/> upon failure.
-            </summary>
-            <param name="remoteIP">The IP address of the connecting client.</param>
-            <param name="ehloName">The EHLO/HELO hostname provided by the client (used for null senders).</param>
-            <param name="mailFrom">The MAIL FROM address (can be empty <c>&lt;&gt;</c> for bounce messages).</param>
-            <returns>A task that represents the asynchronous validation operation.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="remoteIP"/> is <c>null</c>.</exception>
-            <exception cref="T:System.ArgumentException">Thrown if <paramref name="ehloName"/> is <c>null</c> or empty.</exception>
-            <exception cref="T:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException">Thrown if the sender fails PTR, SPF (including SoftFail <c>~all</c>), or MX authorization checks.</exception>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.TryVerifyPtrAsync(System.Net.IPAddress,System.String)">
-            <summary>
-            Performs a reverse DNS lookup on the remote IP and verifies that the resulting hostname matches the provided EHLO name.
+            Validates the remote sender using a PTR check against <paramref name="ehloName"/> and an SPF check
+            (with MX/Domain IP fallback when no SPF record exists). For null senders (<c>&lt;&gt;</c>), validation
+            targets the client's EHLO hostname; for normal senders, it targets the <c>MAIL FROM</c> domain.
             </summary>
             <param name="remoteIP">The remote client IP address.</param>
-            <param name="ehloName">The EHLO name presented by the client.</param>
-            <returns>A task representing the asynchronous operation.</returns>
+            <param name="ehloName">The EHLO/HELO hostname presented by the client.</param>
+            <param name="mailFrom">The envelope <c>MAIL FROM</c> address (may be empty or <c>&lt;&gt;</c> for bounce messages).</param>
+            <returns>A <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> containing the pass/fail state and <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/>.</returns>
         </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.TryEvaluateSpfAsync(System.String,System.Net.IPAddress)">
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.VerifyPtrAsync(System.Net.IPAddress,System.String)">
             <summary>
-            Checks if an SPF record exists for the domain and evaluates it against the remote IP.
-            Returns true if an SPF record was found and evaluated (regardless of whether the IP passed or failed),
-            or false if no SPF record exists at all.
+            Verifies reverse DNS (PTR) for <paramref name="remoteIP"/> and checks that at least one resolved
+            PTR hostname matches <paramref name="ehloName"/>.
             </summary>
         </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.EvaluateSpfRecursiveAsync(System.String,System.Net.IPAddress,System.Collections.Generic.HashSet{System.String})">
+        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.EvaluateSpfRecursiveAsync(System.String,System.Net.IPAddress,System.Collections.Generic.HashSet{System.String},System.Int32,System.Boolean)">
             <summary>
-            Recursively evaluates SPF records, processing mechanisms and handling included domains or redirects.
-            Throws an <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_ValidatorException"/> if an SPF record is found but the IP is explicitly unauthorized.
+            Evaluates SPF TXT records for <paramref name="domain"/> recursively, running independent
+            <c>include:</c>, <c>a:</c>, and <c>mx:</c> checks concurrently.
+            Returns <see cref="F:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.StepStatus.NotApplicable"/> when no SPF record exists for <paramref name="domain"/>.
             </summary>
-            <returns>A task returning <c>true</c> if an SPF record was found and evaluated; <c>false</c> if no SPF record exists.</returns>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.IpMatchesCidr(System.Net.IPAddress,System.String)">
-            <summary>
-            Determines whether an IP address matches a given CIDR block notation (IPv4 or IPv6).
-            </summary>
-            <param name="address">The IP address to check.</param>
-            <param name="cidrBlock">The CIDR block string (e.g., "192.168.1.0/24").</param>
-            <returns><c>true</c> if the IP address matches the CIDR block; otherwise, <c>false</c>.</returns>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.DomainHasIpAsync(System.String,System.Net.IPAddress)">
             <summary>
-            Resolves a domain's host addresses and checks if any match the specified remote IP address.
-            Properly differentiates between transient DNS errors (throwing temporary exceptions) and permanent failures.
+            Resolves a domain's host A/AAAA addresses via <see cref="P:LumiSoft.Net.DNS.Client.DNS_Client.Static"/> and checks whether any match <paramref name="remoteIP"/>.
             </summary>
-            <param name="domain">The target domain to resolve.</param>
-            <param name="remoteIP">The remote IP address to verify against domain IPs.</param>
-            <returns>A task returning <c>true</c> if a match is found; otherwise, <c>false</c>.</returns>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.MxHasIpAsync(System.String,System.Net.IPAddress)">
             <summary>
-            Queries a domain's MX records, resolves their target host addresses, and checks if any match the specified remote IP address.
+            Queries a domain's MX records, resolves their target host addresses via <see cref="P:LumiSoft.Net.DNS.Client.DNS_Client.Static"/>,
+            and checks whether any match <paramref name="remoteIP"/>.
             </summary>
-            <param name="domain">The target domain whose MX records should be queried.</param>
-            <param name="remoteIP">The remote IP address to verify.</param>
-            <returns>A task returning <c>true</c> if a match is found; otherwise, <c>false</c>.</returns>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.VerifyMxOrDomainFallbackAsync(System.String,System.Net.IPAddress)">
             <summary>
-            Validates fallback authorization when no SPF record is present, checking both the domain's own IP addresses 
-            and its MX record host IP addresses against the remote client IP.
+            Validates fallback authorization when no SPF record is published, checking both the domain's own
+            host IP addresses and its MX record host IP addresses via <see cref="P:LumiSoft.Net.DNS.Client.DNS_Client.Static"/> against <paramref name="remoteIP"/>.
             </summary>
-            <param name="senderDomain">The sender's domain extracted from MAIL FROM.</param>
-            <param name="remoteIP">The remote client IP address.</param>
-            <returns>A task representing the asynchronous operation.</returns>
-        </member>
-        <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.IsTransientException(System.Exception)">
-            <summary>
-            Determines whether an exception represents a transient network or timeout error.
-            </summary>
-            <param name="ex">The exception to evaluate.</param>
-            <returns><c>true</c> if the exception is transient; otherwise, <c>false</c>.</returns>
         </member>
         <member name="T:LumiSoft.Net.SMTP.Server.SMTP_Server">
             <summary>
@@ -56987,6 +56992,18 @@
             address inside the angle brackets. For the null sender,
             the value is an empty string ("").
             </value>
+        </member>
+        <member name="P:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.Domain">
+            <summary>
+            Gets the domain portion of the mailbox.
+            </summary>
+            <remarks>
+            The domain is extracted from the <see cref="P:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.Mailbox"/> value by
+            taking the portion following the '@' character. For example,
+            the mailbox <c>user@example.com</c> returns <c>example.com</c>.
+            If the mailbox does not contain a domain part, an empty string
+            is returned.
+            </remarks>
         </member>
         <member name="P:LumiSoft.Net.SMTP.Server.SMTP_t_MailFrom.Size">
             <summary>
