@@ -43,27 +43,41 @@ namespace lsMailServer.RestApi
 
         #endregion
 
-        private MailServerHostedService _mailServerHostedService;
+        private readonly SmtpService _smtpService;
+        private readonly Pop3Service _pop3Service;
+        private readonly ImapService _imapService;
+        private readonly SmtpRelayService _relayService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SessionsController"/> class.
         /// </summary>
-        public SessionsController(MailServerHostedService mailServerHostedService)
+        /// <param name="smtpService">The inbound SMTP service used to inspect and disconnect active SMTP sessions.</param>
+        /// <param name="pop3Service">The inbound POP3 service used to inspect and disconnect active POP3 sessions.</param>
+        /// <param name="imapService">The inbound IMAP4 service used to inspect and disconnect active IMAP sessions.</param>
+        /// <param name="relayService">The outbound SMTP relay service used to inspect and disconnect active relay sessions.</param>
+        public SessionsController(SmtpService smtpService, Pop3Service pop3Service, ImapService imapService, SmtpRelayService relayService)
         {
-            _mailServerHostedService = mailServerHostedService;
+            _smtpService = smtpService;
+            _pop3Service = pop3Service;
+            _imapService = imapService;
+            _relayService = relayService;
         }
 
         #region method GetSessions
 
         /// <summary>
-        /// Retrieves a snapshot of all currently connected client sessions across IMAP, POP3, and SMTP,
+        /// Retrieves a snapshot of all currently connected client sessions across IMAP, POP3, SMTP and SMTP Relay
         /// ordered chronologically by connection time.
         /// </summary>
         /// <returns>An <see cref="ActionResult{T}"/> containing the list of active <see cref="SessionDto"/> entries.</returns>
         [HttpGet]
         public ActionResult<IReadOnlyList<SessionDto>> GetSessions()
         {
-            var sessions = _mailServerHostedService.GetSessions();
+            var sessions = new List<SessionDto>();
+            sessions.AddRange(_smtpService.GetSessions());
+            sessions.AddRange(_pop3Service.GetSessions());
+            sessions.AddRange(_imapService.GetSessions());
+            sessions.AddRange(_relayService.GetSessions());
             sessions.Sort((a, b) => b.ConnectTime.CompareTo(a.ConnectTime));
 
             return Ok(sessions);
@@ -90,15 +104,21 @@ namespace lsMailServer.RestApi
                 return BadRequest();
             }
 
-            if (!protocol.Equals("IMAP", StringComparison.OrdinalIgnoreCase) &&
-                !protocol.Equals("POP3", StringComparison.OrdinalIgnoreCase) &&
-                !protocol.Equals("SMTP", StringComparison.OrdinalIgnoreCase) &&
-                !protocol.Equals("Relay", StringComparison.OrdinalIgnoreCase))
-            {
+            if(protocol.Equals("IMAP", StringComparison.OrdinalIgnoreCase)) {
+                _imapService.DisconnectSession(id);
+            }
+            else if(protocol.Equals("POP3", StringComparison.OrdinalIgnoreCase)) {
+                _pop3Service.DisconnectSession(id);
+            }
+            else if(protocol.Equals("SMTP", StringComparison.OrdinalIgnoreCase)) {
+                _smtpService.DisconnectSession(id);
+            }
+            else if(protocol.Equals("Relay", StringComparison.OrdinalIgnoreCase)) {
+                _relayService.DisconnectSession(id);
+            }
+            else{
                 return BadRequest($"Unsupported protocol '{protocol}'.");
             }
-
-            _mailServerHostedService.DisconnectSession(protocol, id);
 
             return NoContent();
         }

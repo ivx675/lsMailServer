@@ -143,8 +143,8 @@ namespace lsMailServer.Logging
         /// <returns>A normalized category label such as <c>"SMTP"</c>, <c>"Relay"</c>, <c>"IMAP"</c>, <c>"POP3"</c>, or the short class name.</returns>
         private static string NormalizeCategory(string categoryName)
         {
-            if (categoryName.Contains("Smtp", StringComparison.OrdinalIgnoreCase)) return "SMTP";
             if (categoryName.Contains("Relay", StringComparison.OrdinalIgnoreCase)) return "Relay";
+            if (categoryName.Contains("Smtp", StringComparison.OrdinalIgnoreCase)) return "SMTP";
             if (categoryName.Contains("Imap", StringComparison.OrdinalIgnoreCase)) return "IMAP";
             if (categoryName.Contains("Pop3", StringComparison.OrdinalIgnoreCase)) return "POP3";
 

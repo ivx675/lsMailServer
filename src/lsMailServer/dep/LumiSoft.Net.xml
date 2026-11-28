@@ -56517,14 +56517,16 @@
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.ValidateAsync(System.Net.IPAddress,System.String,System.String)">
             <summary>
-            Validates the remote sender using a PTR check against <paramref name="ehloName"/> and an SPF check
-            (with MX/Domain IP fallback when no SPF record exists). For null senders (<c>&lt;&gt;</c>), validation
-            targets the client's EHLO hostname; for normal senders, it targets the <c>MAIL FROM</c> domain.
+            Validates an incoming SMTP sender against domain resolution, SPF policy evaluation,
+            and MX/domain IP fallback when no SPF record is published.
             </summary>
-            <param name="remoteIP">The remote client IP address.</param>
-            <param name="ehloName">The EHLO/HELO hostname presented by the client.</param>
-            <param name="mailFrom">The envelope <c>MAIL FROM</c> address (may be empty or <c>&lt;&gt;</c> for bounce messages).</param>
-            <returns>A <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> containing the pass/fail state and <see cref="T:LumiSoft.Net.SMTP.SMTP_ServerResponse"/>.</returns>
+            <param name="remoteIP">The remote client IP address initiating the SMTP connection.</param>
+            <param name="ehloName">The hostname or domain provided in the client's <c>EHLO</c>/<c>HELO</c> command.</param>
+            <param name="mailFrom">The reverse-path (<c>MAIL FROM</c>) sender address or mailbox.</param>
+            <returns>
+            A <see cref="T:System.Threading.Tasks.Task`1"/> resolving to a <see cref="T:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.Result"/> indicating whether validation
+            passed, temporarily failed, or was permanently rejected.
+            </returns>
         </member>
         <member name="M:LumiSoft.Net.SMTP.Server.SMTP_SenderValidator.VerifyPtrAsync(System.Net.IPAddress,System.String)">
             <summary>

@@ -1,11 +1,13 @@
-﻿using LumiSoft.Net;
+﻿using lsMailServer.RestApi;
 using LumiSoft.Net.DNS;
 using LumiSoft.Net.DNS.Client;
 using LumiSoft.Net.IO;
+using LumiSoft.Net.Log;
 using LumiSoft.Net.Mail;
 using LumiSoft.Net.MIME;
 using LumiSoft.Net.SMTP;
 using LumiSoft.Net.SMTP.Client;
+using LumiSoft.Net.SMTP.Server;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.IO;
@@ -240,20 +242,20 @@ namespace lsMailServer.Services
         private static readonly TimeSpan _relayInterval = TimeSpan.FromSeconds(10);
     
         // Loaded fields (with sensible defaults)
-        private readonly string _hostName;
-        private readonly int _maxOutboundConnections;
-        private readonly int _maxConnectionsPerDomain;
-        private readonly TimeSpan _maxSessionTimeout;
-        private readonly bool _useTlsIfPossible;
-        private readonly TimeSpan _retryInterval;
-        private readonly TimeSpan _delayWarningAfter;
-        private readonly TimeSpan _undeliveredAfter;
-        private readonly bool _useSmartHost;
-        private readonly string? _smartHostHost;
-        private readonly int _smartHostPort;
-        private readonly string? _smartHostUserName;
-        private readonly string? _smartHostPassword;
-        private readonly TlsMode _smartHostTlsMode;
+        private string _hostName = "";
+        private int _maxOutboundConnections;
+        private int _maxConnectionsPerDomain;
+        private TimeSpan _maxSessionTimeout;
+        private bool _useTlsIfPossible;
+        private TimeSpan _retryInterval;
+        private TimeSpan _delayWarningAfter;
+        private TimeSpan _undeliveredAfter;
+        private bool _useSmartHost;
+        private string? _smartHostHost;
+        private int _smartHostPort;
+        private string? _smartHostUserName;
+        private string? _smartHostPassword;
+        private TlsMode _smartHostTlsMode;
 
         // Tracks currently active outbound deliveries per domain to implement skip-on-limit throttling
         private readonly ConcurrentDictionary<string, int> _activeDomainCounts = new(StringComparer.OrdinalIgnoreCase);
@@ -288,6 +290,18 @@ namespace lsMailServer.Services
             Directory.CreateDirectory(_relayDir);
             Directory.CreateDirectory(_retryDir);
 
+            ApplySettings();
+        }
+
+        #region method ApplySettings
+
+        /// <summary>
+        /// Reads the current <c>SmtpRelay</c> and <c>SmtpRelay:SmartHost</c> configuration sections
+        /// and updates outbound relay connection limits, timeouts, retry/DSN thresholds, TLS preferences,
+        /// and smart host routing settings for subsequent delivery attempts.
+        /// </summary>
+        public void ApplySettings()
+        {
             IConfigurationSection section = _configuration.GetSection("SmtpRelay");
 
             string? configuredHostName = section.GetValue<string>("HostName");
@@ -312,6 +326,8 @@ namespace lsMailServer.Services
             _smartHostTlsMode = smartHost.GetValue("TlsMode", TlsMode.Explicit);
         }
 
+        #endregion
+
 
         #region override method ExecuteAsync
 
@@ -323,7 +339,7 @@ namespace lsMailServer.Services
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation(
-                "OutboundRelayService started. Interval: {RelayInterval}s, RetryInterval: {RetryInterval}s, " +
+                "SmtpRelayService started. Interval: {RelayInterval}s, RetryInterval: {RetryInterval}s, " +
                 "MaxGlobalConnections: {MaxGlobal}, MaxPerDomainConnections: {MaxPerDomain}",
                 _relayInterval.TotalSeconds, _retryInterval.TotalSeconds, _maxOutboundConnections, _maxConnectionsPerDomain);
 
@@ -675,6 +691,8 @@ namespace lsMailServer.Services
 
             // 2. Lazily resolve A/AAAA and connect in priority order
             using var smtpClient = new SMTP_Client();
+            smtpClient.Logger = new Logger();
+            smtpClient.Logger.WriteLog += SessionLog;
             string? lastConnectError = null;            
 
             string sessionId = Guid.NewGuid().ToString("N");
@@ -727,9 +745,8 @@ namespace lsMailServer.Services
                 }
                 
                 // 3. ESMTP handshake, STARTTLS upgrade, and authentication
-                string localHostName = Dns.GetHostName();
                 smtpClient.Tags["StatusText"] = "Executing EHLO";
-                await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
+                await smtpClient.EhloHeloAsync(_hostName, token).ConfigureAwait(false);
 
                 if (!smtpClient.IsSecureConnection) {
                     bool serverSupportsStartTls = smtpClient.EsmtpFeatures.Contains("STARTTLS", StringComparer.OrdinalIgnoreCase);
@@ -743,14 +760,14 @@ namespace lsMailServer.Services
                         await smtpClient.StartTlsAsync(null, token).ConfigureAwait(false);
                         // RFC 3207 Section 4.2: Client MUST re-issue EHLO after STARTTLS completes
                         smtpClient.Tags["StatusText"] = "Executing EHLO";
-                        await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
+                        await smtpClient.EhloHeloAsync(_hostName, token).ConfigureAwait(false);
                     }
                     else if (!useSmartHost && _useTlsIfPossible && serverSupportsStartTls) {
                         try {
                             smtpClient.Tags["StatusText"] = "Executing STARTTLS";
                             await smtpClient.StartTlsAsync(null, token).ConfigureAwait(false);
                             smtpClient.Tags["StatusText"] = "Executing EHLO";
-                            await smtpClient.EhloHeloAsync(localHostName, token).ConfigureAwait(false);
+                            await smtpClient.EhloHeloAsync(_hostName, token).ConfigureAwait(false);
                         }
                         catch (Exception tlsEx)  {
                             // Opportunistic TLS failed; log and allow retry (or reconnect without TLS if desired)
@@ -959,6 +976,7 @@ namespace lsMailServer.Services
             // --- Part 1: Human-Readable Explanation ---
             if (isDelayed) {
                 bodyMultipartReport.BodyParts.Add(MIME_Entity.CreateEntity_Text_Plain("7bit",
+                    "\r\n" +
                     "This is an automatically generated Delivery Status Notification." +
                     "\r\n" +
                     $"Delivery to the following recipient has been delayed: {metadata.RecipientAddress}" +
@@ -969,6 +987,7 @@ namespace lsMailServer.Services
             }
             else {
                 bodyMultipartReport.BodyParts.Add(MIME_Entity.CreateEntity_Text_Plain("7bit",
+                    "\r\n" +
                     $"This is the mail system at host {localHost}." +
                     "\r\n" +
                     "I am sorry to have to inform you that your message could not " +
@@ -1207,6 +1226,120 @@ namespace lsMailServer.Services
             // Order by FirstAttemptTime first
             items.Sort((a, b) => a.FirstAttemptTime.CompareTo(b.FirstAttemptTime));
             return items;
+        }
+
+        #endregion        
+
+        #region method SessionLog
+
+        /// <summary>
+        /// Raised when the underlying protocol logger writes a session log entry,
+        /// forwarding protocol wire traffic, diagnostic events, and exceptions to <see cref="_logger"/>.
+        /// </summary>
+        /// <param name="sender">The source of the log event.</param>
+        /// <param name="eArgs">The event arguments containing the <see cref="LogEntry"/> to record.</param>
+        private void SessionLog(object? sender, WriteLogEventArgs eArgs)
+        {
+            var entry = eArgs.LogEntry;
+            string remoteEp = "unknown";
+
+            if (entry.RemoteEndPoint != null) {
+                var address = entry.RemoteEndPoint.Address.IsIPv4MappedToIPv6
+                    ? entry.RemoteEndPoint.Address.MapToIPv4()
+                    : entry.RemoteEndPoint.Address;
+
+                remoteEp = address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6
+                    ? $"[{address}]:{entry.RemoteEndPoint.Port}"
+                    : $"{address}:{entry.RemoteEndPoint.Port}";
+            }
+
+            if (entry.EntryType == LogEntryType.Exception) {
+                if (_logger.IsEnabled(LogLevel.Error)) {
+                    _logger.LogError(
+                        entry.Exception,
+                        "SMTP protocol error (Session: {SessionId}, Remote: {RemoteEp}, User: {User}): {Text}",
+                        entry.ID,
+                        remoteEp,
+                        entry.UserIdentity?.Name ?? "-",
+                        entry.Text);
+                }
+                return;
+            }
+
+            LogLevel targetLevel = entry.EntryType == LogEntryType.Text
+                ? LogLevel.Debug
+                : LogLevel.Trace;
+
+            if (!_logger.IsEnabled(targetLevel)) {
+                return; // Zero allocation when Trace/Debug is disabled
+            }
+
+            _logger.Log(
+                targetLevel,
+                "[{EntryType}] (Session: {SessionId}, Remote: {RemoteEp}, User: {User}, Size: {Size}) {Text}",
+                entry.EntryType,
+                entry.ID,
+                remoteEp,
+                entry.UserIdentity?.Name ?? "-",
+                entry.Size,
+                entry.Text);
+        }
+
+        #endregion
+
+        
+        #region method GetSessions
+
+        /// <summary>
+        /// Retrieves a snapshot of all currently active sessions.
+        /// </summary>
+        /// <returns>
+        /// A list of <see cref="SessionsController.SessionDto"/> objects representing each active session and its current state.
+        /// </returns>
+        public List<SessionsController.SessionDto> GetSessions()
+        {
+            var retValue = new List<SessionsController.SessionDto>();
+            try{
+                foreach(var session in _activeSessions.Values.ToArray()) {
+                    try {
+                        retValue.Add(new SessionsController.SessionDto(
+                            session.ID,
+                            "Relay",
+                            session.RemoteEndPoint.ToString(),
+                            session.LocalEndPoint.ToString(),
+                            session.IsSecureConnection,
+                            session.IsAuthenticated,
+                            session.AuthenticatedUserIdentity?.Name,
+                            session.Tags["StatusText"].ToString(),
+                            session.ConnectTime,
+                            session.LastActivity
+                        ));
+                    }
+                    catch {
+                    }
+                }
+            }
+            catch {
+            }
+
+            return retValue;
+        }
+
+        #endregion
+
+        #region method DisconnectSession
+
+        /// <summary>
+        /// Disconnects an active session identified by its session ID.
+        /// </summary>
+        /// <param name="id">The unique identifier of the session to disconnect.</param>
+        public void DisconnectSession(string id)
+        {
+            try{
+                _activeSessions[id].Disconnect();
+            }
+            catch {
+            }
         }
 
         #endregion

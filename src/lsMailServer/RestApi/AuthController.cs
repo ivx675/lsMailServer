@@ -1,10 +1,12 @@
-﻿using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
+﻿using lsMailServer.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Net;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace lsMailServer.RestApi 
 {  
@@ -24,14 +26,17 @@ namespace lsMailServer.RestApi
         public record LoginRequest(string Username, string Password);
 
         private readonly IConfiguration _config;
+        private readonly FailedAuthLimiterService _failedAuthLimiterService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AuthController"/> class.
         /// </summary>
         /// <param name="config">The application configuration instance.</param>
-        public AuthController(IConfiguration config)
+        /// <param name="failedAuthLimiterService">The rate-limiting service tracking failed authentication attempts.</param>
+        public AuthController(IConfiguration config, FailedAuthLimiterService failedAuthLimiterService)
         {
             _config = config;
+            _failedAuthLimiterService = failedAuthLimiterService;
         }
 
         /// <summary>
@@ -47,8 +52,16 @@ namespace lsMailServer.RestApi
         [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequest req)
         {
+            IPAddress? clientIp = this.HttpContext.Connection.RemoteIpAddress;
+
             if (string.IsNullOrWhiteSpace(req?.Username) || string.IsNullOrWhiteSpace(req?.Password))
                 return BadRequest(new { error = "Username and password are required." });
+
+            if (_failedAuthLimiterService.IsBlocked(clientIp, req.Username, out TimeSpan remaining)) {
+                int retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                Response.Headers.RetryAfter = retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return StatusCode(StatusCodes.Status429TooManyRequests, new { message = "Too many failed login attempts. Try again later." });
+            }
 
             var expectedUser = _config["AdminAuth:Username"] ?? "admin";
             var expectedPass = _config["AdminAuth:Password"] ?? string.Empty;
@@ -62,8 +75,10 @@ namespace lsMailServer.RestApi
                 Encoding.UTF8.GetBytes(req.Password),
                 Encoding.UTF8.GetBytes(expectedPass));
 
-            if (!userMatch || !passMatch)
+            if (!userMatch || !passMatch) {
+                _failedAuthLimiterService.RecordFailure(clientIp, req.Username);
                 return Unauthorized(new { error = "Invalid username or password." });
+            }
 
             var claims = new[]
             {
