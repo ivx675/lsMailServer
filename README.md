@@ -61,7 +61,7 @@ https://hub.docker.com/r/ivx675/lsmailserver
 
 ### Login
 
-<img src="docs/images/login.png" width="800" alt="Login">
+<img src="docs/images/login.png" width="400" alt="Login">
 
 ### Domain Management
 
@@ -73,7 +73,7 @@ https://hub.docker.com/r/ivx675/lsmailserver
 
 ### User Management
 
-<img src="docs/images/user.png" width="800" alt="User Management">
+<img src="docs/images/user.png" width="400" alt="User Management">
 
 ## Supported Features
 
