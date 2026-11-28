@@ -19,12 +19,16 @@ A lightweight cross-platform mail server written in C#/.NET that provides SMTP, 
 ### Default Endpoints
 
 - **Web Administration UI:** `https://localhost:5001`
+  - Default Password: `1234`
 - **REST API Swagger:** `https://localhost:5001/swagger`
 - **SMTP:** `25`
 - **POP3:** `110`
 - **POP3S:** `995`
 - **IMAP:** `143`
 - **IMAPS:** `993`
+
+> [!WARNING]
+> Change the default Web Administration password before exposing the server to untrusted networks or production environments.
 
 > [!NOTE]
 > The Web Administration UI and REST API are hosted by the same service.
